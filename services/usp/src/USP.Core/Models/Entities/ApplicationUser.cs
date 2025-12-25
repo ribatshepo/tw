@@ -12,6 +12,11 @@ public class ApplicationUser : IdentityUser<Guid>
     public string Status { get; set; } = "active";
     public bool MfaEnabled { get; set; }
     public string? MfaSecret { get; set; }
+
+    // SMS/Phone MFA
+    public string? VerifiedPhoneNumber { get; set; }
+    public bool PhoneNumberVerified { get; set; } = false;
+
     public int FailedLoginAttempts { get; set; }
     public DateTime? LastFailedLogin { get; set; }
     public DateTime? LockedUntil { get; set; }
@@ -28,4 +33,5 @@ public class ApplicationUser : IdentityUser<Guid>
     public virtual ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
     public virtual ICollection<MfaDevice> MfaDevices { get; set; } = new List<MfaDevice>();
     public virtual ICollection<MfaBackupCode> MfaBackupCodes { get; set; } = new List<MfaBackupCode>();
+    public virtual ICollection<TrustedDevice> TrustedDevices { get; set; } = new List<TrustedDevice>();
 }

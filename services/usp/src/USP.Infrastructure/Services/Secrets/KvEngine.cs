@@ -54,6 +54,35 @@ public class KvEngine : IKvEngine
         var currentVersion = existingSecrets.Count > 0 ? existingSecrets[0].Version : 0;
         var newVersion = currentVersion + 1;
 
+        var casRequired = false;
+        var maxVersionsForPath = DefaultMaxVersions;
+
+        if (existingSecrets.Count > 0)
+        {
+            var latestSecret = existingSecrets[0];
+            if (latestSecret.Metadata != null)
+            {
+                var storedMetadata = JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata.RootElement.GetRawText());
+                if (storedMetadata != null)
+                {
+                    if (storedMetadata.TryGetValue("cas_required", out var casRequiredObj) && casRequiredObj is JsonElement casRequiredElement)
+                    {
+                        casRequired = casRequiredElement.GetBoolean();
+                    }
+
+                    if (storedMetadata.TryGetValue("max_versions", out var maxVersionsObj) && maxVersionsObj is JsonElement maxVersionsElement)
+                    {
+                        maxVersionsForPath = maxVersionsElement.GetInt32();
+                    }
+                }
+            }
+        }
+
+        if (casRequired && !request.Cas.HasValue)
+        {
+            throw new InvalidOperationException("CAS (Check-And-Set) is required for this secret path but not provided");
+        }
+
         // Check-and-Set validation
         if (request.Cas.HasValue)
         {
@@ -90,11 +119,10 @@ public class KvEngine : IKvEngine
         _context.Secrets.Add(secret);
 
         // Clean up old versions if max versions exceeded
-        var maxVersions = DefaultMaxVersions; // Can be made configurable per path
-        if (existingSecrets.Count >= maxVersions)
+        if (existingSecrets.Count >= maxVersionsForPath)
         {
             var versionsToRemove = existingSecrets
-                .Skip(maxVersions - 1)
+                .Skip(maxVersionsForPath - 1)
                 .Where(s => !s.IsDeleted)
                 .ToList();
 
@@ -279,6 +307,43 @@ public class KvEngine : IKvEngine
         var latestSecret = secrets.OrderByDescending(s => s.Version).First();
         var oldestSecret = secrets.First();
 
+        var storedMetadata = latestSecret.Metadata != null
+            ? JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata.RootElement.GetRawText())
+            : new Dictionary<string, object>();
+
+        var maxVersions = DefaultMaxVersions;
+        var casRequired = false;
+        var customMetadata = new Dictionary<string, string>();
+        DateTime? deleteVersionAfter = null;
+
+        if (storedMetadata != null)
+        {
+            if (storedMetadata.TryGetValue("max_versions", out var maxVersionsObj) && maxVersionsObj is JsonElement maxVersionsElement)
+            {
+                maxVersions = maxVersionsElement.GetInt32();
+            }
+
+            if (storedMetadata.TryGetValue("cas_required", out var casRequiredObj) && casRequiredObj is JsonElement casRequiredElement)
+            {
+                casRequired = casRequiredElement.GetBoolean();
+            }
+
+            if (storedMetadata.TryGetValue("custom_metadata", out var customMetadataObj) && customMetadataObj is JsonElement customMetadataElement)
+            {
+                customMetadata = JsonSerializer.Deserialize<Dictionary<string, string>>(customMetadataElement.GetRawText())
+                    ?? new Dictionary<string, string>();
+            }
+
+            if (storedMetadata.TryGetValue("delete_version_after", out var deleteVersionAfterObj) && deleteVersionAfterObj is JsonElement deleteVersionAfterElement)
+            {
+                var deleteAfterString = deleteVersionAfterElement.GetString();
+                if (DateTime.TryParse(deleteAfterString, out var parsedDate))
+                {
+                    deleteVersionAfter = parsedDate;
+                }
+            }
+        }
+
         var metadata = new SecretMetadata
         {
             Path = path,
@@ -286,9 +351,10 @@ public class KvEngine : IKvEngine
             UpdatedTime = latestSecret.CreatedAt,
             CurrentVersion = latestSecret.Version,
             OldestVersion = oldestSecret.Version,
-            MaxVersions = DefaultMaxVersions,
-            CasRequired = false,
-            CustomMetadata = new Dictionary<string, string>(),
+            MaxVersions = maxVersions,
+            CasRequired = casRequired,
+            CustomMetadata = customMetadata,
+            DeleteVersionAfter = deleteVersionAfter,
             Versions = secrets.ToDictionary(
                 s => s.Version,
                 s => new SecretVersionInfo
@@ -308,9 +374,62 @@ public class KvEngine : IKvEngine
     {
         path = NormalizePath(path);
 
-        _logger.LogInformation("Updated metadata for path {Path} by user {UserId}", path, userId);
+        var secrets = await _context.Secrets
+            .Where(s => s.Path == path)
+            .ToListAsync();
 
-        await Task.CompletedTask;
+        if (secrets.Count == 0)
+        {
+            throw new InvalidOperationException($"No secrets found at path {path}");
+        }
+
+        if (request.MaxVersions.HasValue)
+        {
+            if (request.MaxVersions.Value < 1 || request.MaxVersions.Value > 100)
+            {
+                throw new ArgumentException("MaxVersions must be between 1 and 100", nameof(request.MaxVersions));
+            }
+        }
+
+        var latestSecret = secrets.OrderByDescending(s => s.Version).First();
+
+        var existingMetadata = latestSecret.Metadata != null
+            ? JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata.RootElement.GetRawText())
+            : new Dictionary<string, object>();
+
+        if (existingMetadata == null)
+        {
+            existingMetadata = new Dictionary<string, object>();
+        }
+
+        if (request.MaxVersions.HasValue)
+        {
+            existingMetadata["max_versions"] = request.MaxVersions.Value;
+        }
+
+        if (request.CasRequired.HasValue)
+        {
+            existingMetadata["cas_required"] = request.CasRequired.Value;
+        }
+
+        if (!string.IsNullOrEmpty(request.DeleteVersionAfter))
+        {
+            existingMetadata["delete_version_after"] = request.DeleteVersionAfter;
+        }
+
+        if (request.CustomMetadata != null)
+        {
+            existingMetadata["custom_metadata"] = request.CustomMetadata;
+        }
+
+        var updatedMetadataJson = JsonSerializer.Serialize(existingMetadata);
+        latestSecret.Metadata = JsonDocument.Parse(updatedMetadataJson);
+        latestSecret.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Updated metadata for path {Path} by user {UserId}: MaxVersions={MaxVersions}, CasRequired={CasRequired}",
+            path, userId, request.MaxVersions, request.CasRequired);
     }
 
     public async Task DeleteSecretMetadataAsync(string path, Guid userId)

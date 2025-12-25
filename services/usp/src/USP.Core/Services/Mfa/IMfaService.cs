@@ -52,4 +52,34 @@ public interface IMfaService
     /// Set primary MFA device
     /// </summary>
     Task<bool> SetPrimaryMfaDeviceAsync(Guid userId, Guid deviceId);
+
+    /// <summary>
+    /// Send phone number verification code
+    /// </summary>
+    Task<bool> SendPhoneVerificationAsync(Guid userId, string phoneNumber);
+
+    /// <summary>
+    /// Verify phone number with code
+    /// </summary>
+    Task<bool> VerifyPhoneNumberAsync(Guid userId, string code);
+
+    /// <summary>
+    /// Enroll SMS MFA after phone verification
+    /// </summary>
+    Task<bool> EnrollSmsMfaAsync(Guid userId);
+
+    /// <summary>
+    /// Send SMS OTP code for authentication
+    /// </summary>
+    Task<bool> SendSmsOtpAsync(Guid userId);
+
+    /// <summary>
+    /// Verify SMS OTP code
+    /// </summary>
+    Task<bool> VerifySmsOtpAsync(Guid userId, string code);
+
+    /// <summary>
+    /// Send Voice OTP code for authentication
+    /// </summary>
+    Task<bool> SendVoiceOtpAsync(Guid userId);
 }

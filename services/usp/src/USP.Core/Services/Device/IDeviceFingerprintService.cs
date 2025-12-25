@@ -36,4 +36,21 @@ public interface IDeviceFingerprintService
     /// Update device last used timestamp
     /// </summary>
     Task UpdateDeviceLastUsedAsync(Guid userId, string deviceFingerprint);
+
+    /// <summary>
+    /// Update device location from IP address
+    /// </summary>
+    Task UpdateDeviceLocationAsync(Guid userId, string deviceFingerprint, string ipAddress);
+
+    /// <summary>
+    /// Detect impossible travel between last known location and new location
+    /// </summary>
+    /// <returns>True if travel is impossible</returns>
+    Task<bool> DetectImpossibleTravelAsync(Guid userId, string ipAddress);
+
+    /// <summary>
+    /// Get geographic risk score based on device location
+    /// Higher score = higher risk (0-100)
+    /// </summary>
+    Task<int> GetGeographicRiskScoreAsync(Guid userId, string ipAddress);
 }

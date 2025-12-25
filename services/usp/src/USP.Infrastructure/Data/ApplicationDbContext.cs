@@ -40,6 +40,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<SamlIdentityProvider> SamlIdentityProviders { get; set; }
     public DbSet<LdapConfiguration> LdapConfigurations { get; set; }
     public DbSet<RiskAssessment> RiskAssessments { get; set; }
+    public DbSet<UserRiskProfile> UserRiskProfiles { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

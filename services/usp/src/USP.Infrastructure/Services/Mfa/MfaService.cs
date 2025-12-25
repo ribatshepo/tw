@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OtpNet;
@@ -8,6 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using USP.Core.Models.DTOs.Mfa;
 using USP.Core.Models.Entities;
+using USP.Core.Services.Communication;
 using USP.Core.Services.Mfa;
 using USP.Infrastructure.Data;
 
@@ -22,19 +24,30 @@ public class MfaService : IMfaService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IConfiguration _configuration;
     private readonly ILogger<MfaService> _logger;
+    private readonly ISmsService _smsService;
+    private readonly IMemoryCache _cache;
+
     private const int BackupCodeCount = 10;
     private const int BackupCodeLength = 8;
+    private const string PhoneVerificationCodeCachePrefix = "mfa:phone:verify:";
+    private const string SmsOtpCodeCachePrefix = "mfa:sms:otp:";
+    private const int VerificationCodeExpirationMinutes = 10;
+    private const int SmsOtpExpirationMinutes = 5;
 
     public MfaService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         IConfiguration configuration,
-        ILogger<MfaService> logger)
+        ILogger<MfaService> logger,
+        ISmsService smsService,
+        IMemoryCache cache)
     {
         _context = context;
         _userManager = userManager;
         _configuration = configuration;
         _logger = logger;
+        _smsService = smsService;
+        _cache = cache;
     }
 
     public async Task<EnrollTotpResponse> EnrollTotpAsync(Guid userId, string deviceName)
@@ -317,6 +330,221 @@ public class MfaService : IMfaService
         return true;
     }
 
+    public async Task<bool> SendPhoneVerificationAsync(Guid userId, string phoneNumber)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found");
+        }
+
+        // Generate 6-digit verification code
+        var code = GenerateSixDigitCode();
+
+        // Store code in cache with expiration
+        var cacheKey = $"{PhoneVerificationCodeCachePrefix}{userId}";
+        _cache.Set(cacheKey, new { Code = code, PhoneNumber = phoneNumber },
+            TimeSpan.FromMinutes(VerificationCodeExpirationMinutes));
+
+        // Send SMS
+        var sent = await _smsService.SendOtpSmsAsync(phoneNumber, code, VerificationCodeExpirationMinutes);
+
+        if (sent)
+        {
+            _logger.LogInformation("Phone verification code sent to user {UserId}", userId);
+        }
+
+        return sent;
+    }
+
+    public async Task<bool> VerifyPhoneNumberAsync(Guid userId, string code)
+    {
+        var cacheKey = $"{PhoneVerificationCodeCachePrefix}{userId}";
+
+        if (!_cache.TryGetValue<dynamic>(cacheKey, out var cachedData))
+        {
+            _logger.LogWarning("No pending phone verification found for user {UserId}", userId);
+            return false;
+        }
+
+        if (cachedData.Code != code)
+        {
+            _logger.LogWarning("Invalid phone verification code for user {UserId}", userId);
+            return false;
+        }
+
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            return false;
+        }
+
+        // Mark phone as verified
+        user.VerifiedPhoneNumber = cachedData.PhoneNumber;
+        user.PhoneNumberVerified = true;
+        await _userManager.UpdateAsync(user);
+
+        // Remove from cache
+        _cache.Remove(cacheKey);
+
+        _logger.LogInformation("Phone number verified for user {UserId}", userId);
+
+        return true;
+    }
+
+    public async Task<bool> EnrollSmsMfaAsync(Guid userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found");
+        }
+
+        if (!user.PhoneNumberVerified || string.IsNullOrEmpty(user.VerifiedPhoneNumber))
+        {
+            throw new InvalidOperationException("Phone number must be verified before enrolling SMS MFA");
+        }
+
+        // Enable MFA if not already enabled
+        if (!user.MfaEnabled)
+        {
+            user.MfaEnabled = true;
+            await _userManager.UpdateAsync(user);
+        }
+
+        // Create MFA device record
+        var existingDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "SMS" && d.IsActive);
+
+        if (existingDevice != null)
+        {
+            _logger.LogInformation("SMS MFA device already exists for user {UserId}", userId);
+            return true;
+        }
+
+        var device = new MfaDevice
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            DeviceType = "SMS",
+            DeviceName = $"SMS ({MaskPhoneNumber(user.VerifiedPhoneNumber)})",
+            IsActive = true,
+            IsPrimary = false,
+            RegisteredAt = DateTime.UtcNow
+        };
+
+        _context.MfaDevices.Add(device);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("SMS MFA enrolled for user {UserId}", userId);
+
+        return true;
+    }
+
+    public async Task<bool> SendSmsOtpAsync(Guid userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null || string.IsNullOrEmpty(user.VerifiedPhoneNumber))
+        {
+            return false;
+        }
+
+        // Check if SMS MFA device exists and is active
+        var smsDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "SMS" && d.IsActive);
+
+        if (smsDevice == null)
+        {
+            _logger.LogWarning("No active SMS MFA device found for user {UserId}", userId);
+            return false;
+        }
+
+        // Generate 6-digit OTP code
+        var code = GenerateSixDigitCode();
+
+        // Store code in cache with expiration
+        var cacheKey = $"{SmsOtpCodeCachePrefix}{userId}";
+        _cache.Set(cacheKey, code, TimeSpan.FromMinutes(SmsOtpExpirationMinutes));
+
+        // Send SMS
+        var sent = await _smsService.SendOtpSmsAsync(user.VerifiedPhoneNumber, code, SmsOtpExpirationMinutes);
+
+        if (sent)
+        {
+            _logger.LogInformation("SMS OTP code sent to user {UserId}", userId);
+
+            // Update device last used timestamp
+            smsDevice.LastUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return sent;
+    }
+
+    public async Task<bool> VerifySmsOtpAsync(Guid userId, string code)
+    {
+        var cacheKey = $"{SmsOtpCodeCachePrefix}{userId}";
+
+        if (!_cache.TryGetValue<string>(cacheKey, out var cachedCode))
+        {
+            _logger.LogWarning("No pending SMS OTP found for user {UserId}", userId);
+            return false;
+        }
+
+        if (cachedCode != code)
+        {
+            _logger.LogWarning("Invalid SMS OTP code for user {UserId}", userId);
+            return false;
+        }
+
+        // Remove from cache after successful verification
+        _cache.Remove(cacheKey);
+
+        _logger.LogInformation("SMS OTP verified successfully for user {UserId}", userId);
+
+        return true;
+    }
+
+    public async Task<bool> SendVoiceOtpAsync(Guid userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null || string.IsNullOrEmpty(user.VerifiedPhoneNumber))
+        {
+            return false;
+        }
+
+        // Check if SMS MFA device exists and is active
+        var smsDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "SMS" && d.IsActive);
+
+        if (smsDevice == null)
+        {
+            _logger.LogWarning("No active SMS MFA device found for user {UserId}", userId);
+            return false;
+        }
+
+        // Generate 6-digit OTP code
+        var code = GenerateSixDigitCode();
+
+        // Store code in cache with expiration (reuse SMS OTP cache key)
+        var cacheKey = $"{SmsOtpCodeCachePrefix}{userId}";
+        _cache.Set(cacheKey, code, TimeSpan.FromMinutes(SmsOtpExpirationMinutes));
+
+        // Send voice call
+        var sent = await _smsService.SendOtpVoiceAsync(user.VerifiedPhoneNumber, code);
+
+        if (sent)
+        {
+            _logger.LogInformation("Voice OTP code sent to user {UserId}", userId);
+
+            // Update device last used timestamp
+            smsDevice.LastUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return sent;
+    }
+
     #region Private Helper Methods
 
     private bool VerifyTotpCode(string secret, string code)
@@ -417,6 +645,26 @@ public class MfaService : IMfaService
         var bytes = Encoding.UTF8.GetBytes(code.ToUpperInvariant().Replace("-", ""));
         var hash = sha256.ComputeHash(bytes);
         return Convert.ToBase64String(hash);
+    }
+
+    private static string GenerateSixDigitCode()
+    {
+        var bytes = new byte[3];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(bytes);
+
+        var code = BitConverter.ToUInt32(new byte[] { bytes[0], bytes[1], bytes[2], 0 }) % 1000000;
+        return code.ToString("D6");
+    }
+
+    private static string MaskPhoneNumber(string phoneNumber)
+    {
+        if (string.IsNullOrEmpty(phoneNumber) || phoneNumber.Length < 4)
+        {
+            return "****";
+        }
+
+        return $"****{phoneNumber.Substring(phoneNumber.Length - 4)}";
     }
 
     #endregion

@@ -21,6 +21,7 @@ using USP.Core.Services.Cryptography;
 using USP.Core.Services.Device;
 using USP.Core.Services.Mfa;
 using USP.Core.Services.Secrets;
+using USP.Core.Services.Session;
 using USP.Core.Validators.Authentication;
 using USP.Infrastructure.Data;
 using USP.Infrastructure.Services.Authentication;
@@ -30,6 +31,7 @@ using USP.Infrastructure.Services.Cryptography;
 using USP.Infrastructure.Services.Device;
 using USP.Infrastructure.Services.Mfa;
 using USP.Infrastructure.Services.Secrets;
+using USP.Infrastructure.Services.Session;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -136,6 +138,9 @@ try
     builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
     builder.Services.AddScoped<IEmailService, EmailService>();
 
+    // SMS Service
+    builder.Services.AddScoped<ISmsService, SmsService>();
+
     // Distributed Cache (Redis) - for WebAuthn challenges and session storage
     builder.Services.AddStackExchangeRedisCache(options =>
     {
@@ -144,6 +149,9 @@ try
         options.Configuration = redisConnection;
         options.InstanceName = "USP:";
     });
+
+    // HttpClient for external API calls (geolocation, etc.)
+    builder.Services.AddHttpClient();
 
     // WebAuthn/FIDO2 Configuration
     builder.Services.Configure<WebAuthnSettings>(builder.Configuration.GetSection("WebAuthn"));
@@ -161,15 +169,17 @@ try
     // Application Services
     builder.Services.AddScoped<IJwtService, JwtService>();
     builder.Services.AddScoped<IMfaService, MfaService>();
+    builder.Services.AddScoped<IGeolocationService, GeolocationService>();
     builder.Services.AddScoped<IDeviceFingerprintService, DeviceFingerprintService>();
     builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
     builder.Services.AddScoped<IRoleService, RoleService>();
+    builder.Services.AddScoped<ISessionManagementService, SessionManagementService>();
 
     // Advanced Authentication Services
     builder.Services.AddScoped<IWebAuthnService, WebAuthnService>();
     builder.Services.AddScoped<IOAuth2Service, OAuth2Service>();
     builder.Services.AddScoped<IPasswordlessAuthService, PasswordlessAuthService>();
-    builder.Services.AddScoped<IRiskAssessmentService, RiskAssessmentService>();
+    builder.Services.AddScoped<IRiskAssessmentService, USP.Infrastructure.Services.Risk.RiskAssessmentService>();
 
     // Authorization Services
     builder.Services.AddScoped<IAbacEngine, AbacEngine>();

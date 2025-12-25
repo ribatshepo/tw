@@ -8,6 +8,7 @@ using USP.Core.Services.Authentication;
 using USP.Core.Services.Device;
 using USP.Core.Services.Mfa;
 using USP.Infrastructure.Data;
+using SessionEntity = USP.Core.Models.Entities.Session;
 
 namespace USP.Infrastructure.Services.Authentication;
 
@@ -237,7 +238,7 @@ public class AuthenticationService : IAuthenticationService
 
     private async Task CreateSessionAsync(Guid userId, string accessToken, string refreshToken, string ipAddress, string userAgent)
     {
-        var session = new Session
+        var session = new SessionEntity
         {
             UserId = userId,
             TokenHash = _jwtService.HashToken(accessToken),

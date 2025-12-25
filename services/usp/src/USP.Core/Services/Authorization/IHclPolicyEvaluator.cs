@@ -52,6 +52,7 @@ public class HclPathPolicy
     public Dictionary<string, object>? Conditions { get; set; }
     public Dictionary<string, List<string>>? AllowedParameters { get; set; }
     public List<string>? DeniedParameters { get; set; }
+    public List<string>? RequiredParameters { get; set; }
     public int? MinWrappingTtl { get; set; }
     public int? MaxWrappingTtl { get; set; }
 }

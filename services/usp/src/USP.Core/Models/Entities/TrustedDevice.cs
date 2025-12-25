@@ -12,6 +12,16 @@ public class TrustedDevice
     public string DeviceType { get; set; } = string.Empty;
     public string? IpAddress { get; set; }
     public string? Location { get; set; }
+
+    // Detailed geolocation
+    public string? Country { get; set; }
+    public string? CountryCode { get; set; }
+    public string? Region { get; set; }
+    public string? City { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public DateTime? LastLocationUpdate { get; set; }
+
     public bool IsActive { get; set; } = true;
     public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastUsedAt { get; set; }

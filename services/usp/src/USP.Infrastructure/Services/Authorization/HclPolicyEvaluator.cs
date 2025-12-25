@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using USP.Core.Models.DTOs.Authorization;
 using USP.Core.Services.Authorization;
@@ -8,13 +9,17 @@ using USP.Infrastructure.Data;
 namespace USP.Infrastructure.Services.Authorization;
 
 /// <summary>
-/// HCL (HashiCorp Configuration Language) policy evaluator
-/// Supports Vault-style path-based policies with capabilities
+/// Enhanced HCL (HashiCorp Configuration Language) policy evaluator
+/// Supports Vault-style path-based policies with capabilities, wildcards, and caching
 /// </summary>
 public class HclPolicyEvaluator : IHclPolicyEvaluator
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<HclPolicyEvaluator> _logger;
+    private readonly IMemoryCache _cache;
+
+    private const string PolicyCacheKeyPrefix = "hcl:policy:";
+    private const int PolicyCacheExpirationMinutes = 15;
 
     // Supported capabilities
     private static readonly HashSet<string> ValidCapabilities = new()
@@ -23,82 +28,61 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
         "sudo", "deny", "patch"
     };
 
+    // Compiled regex patterns for better performance
+    private static readonly Regex PathBlockRegex = new(@"path\s+""([^""]+)""\s*\{([^}]+)\}", RegexOptions.Compiled | RegexOptions.Multiline);
+    private static readonly Regex CapabilitiesRegex = new(@"capabilities\s*=\s*\[([^\]]+)\]", RegexOptions.Compiled);
+    private static readonly Regex AllowedParamsRegex = new(@"allowed_parameters\s*=\s*\{([^}]+)\}", RegexOptions.Compiled);
+    private static readonly Regex DeniedParamsRegex = new(@"denied_parameters\s*=\s*\[([^\]]+)\]", RegexOptions.Compiled);
+    private static readonly Regex RequiredParamsRegex = new(@"required_parameters\s*=\s*\[([^\]]+)\]", RegexOptions.Compiled);
+    private static readonly Regex MinTtlRegex = new(@"min_wrapping_ttl\s*=\s*""?(\d+[smhd]?)""?", RegexOptions.Compiled);
+    private static readonly Regex MaxTtlRegex = new(@"max_wrapping_ttl\s*=\s*""?(\d+[smhd]?)""?", RegexOptions.Compiled);
+    private static readonly Regex ParamPairRegex = new(@"""([^""]+)""\s*=\s*\[([^\]]*)\]", RegexOptions.Compiled);
+
     public HclPolicyEvaluator(
         ApplicationDbContext context,
-        ILogger<HclPolicyEvaluator> logger)
+        ILogger<HclPolicyEvaluator> logger,
+        IMemoryCache cache)
     {
         _context = context;
         _logger = logger;
+        _cache = cache;
     }
 
     public HclPolicy ParsePolicy(string hclText)
     {
-        var policy = new HclPolicy
-        {
-            PathPolicies = new List<HclPathPolicy>()
-        };
+        var cacheKey = $"{PolicyCacheKeyPrefix}{GetPolicyHash(hclText)}";
 
-        try
+        return _cache.GetOrCreate(cacheKey, entry =>
         {
-            // Simple regex-based HCL parser (production would use proper parser)
-            // Matches: path "secret/data/*" { capabilities = ["create", "read"] }
-            var pathRegex = new Regex(@"path\s+""([^""]+)""\s*\{([^}]+)\}", RegexOptions.Multiline);
-            var matches = pathRegex.Matches(hclText);
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(PolicyCacheExpirationMinutes);
 
-            foreach (Match match in matches)
+            var policy = new HclPolicy
             {
-                var path = match.Groups[1].Value.Trim();
-                var body = match.Groups[2].Value;
+                PathPolicies = new List<HclPathPolicy>()
+            };
 
-                var pathPolicy = new HclPathPolicy
-                {
-                    Path = path,
-                    Capabilities = ExtractCapabilities(body)
-                };
+            try
+            {
+                var matches = PathBlockRegex.Matches(hclText);
 
-                // Extract allowed_parameters
-                var allowedParamsRegex = new Regex(@"allowed_parameters\s*=\s*\{([^}]+)\}");
-                var allowedMatch = allowedParamsRegex.Match(body);
-                if (allowedMatch.Success)
+                foreach (Match match in matches)
                 {
-                    pathPolicy.AllowedParameters = ParseAllowedParameters(allowedMatch.Groups[1].Value);
+                    var path = match.Groups[1].Value.Trim();
+                    var body = match.Groups[2].Value;
+
+                    var pathPolicy = ParsePathPolicy(path, body);
+                    policy.PathPolicies.Add(pathPolicy);
                 }
 
-                // Extract denied_parameters
-                var deniedParamsRegex = new Regex(@"denied_parameters\s*=\s*\[([^\]]+)\]");
-                var deniedMatch = deniedParamsRegex.Match(body);
-                if (deniedMatch.Success)
-                {
-                    pathPolicy.DeniedParameters = ParseListParameter(deniedMatch.Groups[1].Value);
-                }
-
-                // Extract min_wrapping_ttl
-                var minTtlRegex = new Regex(@"min_wrapping_ttl\s*=\s*(\d+)");
-                var minTtlMatch = minTtlRegex.Match(body);
-                if (minTtlMatch.Success && int.TryParse(minTtlMatch.Groups[1].Value, out var minTtl))
-                {
-                    pathPolicy.MinWrappingTtl = minTtl;
-                }
-
-                // Extract max_wrapping_ttl
-                var maxTtlRegex = new Regex(@"max_wrapping_ttl\s*=\s*(\d+)");
-                var maxTtlMatch = maxTtlRegex.Match(body);
-                if (maxTtlMatch.Success && int.TryParse(maxTtlMatch.Groups[1].Value, out var maxTtl))
-                {
-                    pathPolicy.MaxWrappingTtl = maxTtl;
-                }
-
-                policy.PathPolicies.Add(pathPolicy);
+                _logger.LogDebug("Parsed and cached HCL policy with {PathCount} path policies", policy.PathPolicies.Count);
+                return policy;
             }
-
-            _logger.LogDebug("Parsed HCL policy with {PathCount} path policies", policy.PathPolicies.Count);
-            return policy;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error parsing HCL policy");
-            return policy;
-        }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing HCL policy");
+                return policy;
+            }
+        }) ?? new HclPolicy { PathPolicies = new List<HclPathPolicy>() };
     }
 
     public async Task<HclAuthorizationResponse> EvaluateAsync(HclAuthorizationRequest request)
@@ -113,7 +97,6 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
             _logger.LogInformation("Evaluating HCL authorization for user {UserId}, action {Action}, resource {Resource}",
                 request.UserId, request.Action, request.Resource);
 
-            // Get user's roles
             var user = await _context.Users
                 .Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role)
@@ -127,7 +110,6 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                 return response;
             }
 
-            // Get all HCL policies applicable to user's roles
             var roleIds = user.UserRoles.Select(ur => ur.RoleId).ToList();
 
             var policies = await _context.AccessPolicies
@@ -140,7 +122,6 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                 return response;
             }
 
-            // Evaluate each policy
             var explicitDeny = false;
             var hasAllow = false;
 
@@ -154,7 +135,6 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                     {
                         response.MatchedRules.Add($"{policyEntity.Name}:{pathPolicy.Path}");
 
-                        // Check for explicit deny
                         if (pathPolicy.Capabilities.Contains("deny"))
                         {
                             explicitDeny = true;
@@ -163,7 +143,6 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                             break;
                         }
 
-                        // Check if action is allowed
                         if (HasRequiredCapability(request.Action, pathPolicy.Capabilities))
                         {
                             hasAllow = true;
@@ -178,7 +157,6 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                 }
             }
 
-            // Decision logic: explicit deny overrides allow
             if (explicitDeny)
             {
                 response.Authorized = false;
@@ -233,6 +211,11 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                     errors.Add("Path cannot be empty");
                 }
 
+                if (!IsValidPathPattern(pathPolicy.Path))
+                {
+                    errors.Add($"Invalid path pattern '{pathPolicy.Path}'. Use * for single-segment wildcard or + for multi-segment wildcard");
+                }
+
                 if (pathPolicy.Capabilities.Count == 0)
                 {
                     errors.Add($"Path '{pathPolicy.Path}' must define at least one capability");
@@ -242,14 +225,21 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                 {
                     if (!ValidCapabilities.Contains(capability))
                     {
-                        errors.Add($"Invalid capability '{capability}' on path '{pathPolicy.Path}'");
+                        errors.Add($"Invalid capability '{capability}' on path '{pathPolicy.Path}'. Valid: {string.Join(", ", ValidCapabilities)}");
                     }
                 }
 
-                // Check for conflicting capabilities
                 if (pathPolicy.Capabilities.Contains("deny") && pathPolicy.Capabilities.Count > 1)
                 {
                     errors.Add($"Path '{pathPolicy.Path}' cannot have 'deny' with other capabilities");
+                }
+
+                if (pathPolicy.MinWrappingTtl.HasValue && pathPolicy.MaxWrappingTtl.HasValue)
+                {
+                    if (pathPolicy.MinWrappingTtl.Value > pathPolicy.MaxWrappingTtl.Value)
+                    {
+                        errors.Add($"Path '{pathPolicy.Path}': min_wrapping_ttl cannot exceed max_wrapping_ttl");
+                    }
                 }
             }
 
@@ -296,14 +286,12 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                 {
                     if (PathMatches(path, pathPolicy.Path))
                     {
-                        // Add capabilities if not deny
                         if (!pathPolicy.Capabilities.Contains("deny"))
                         {
                             capabilities.AddRange(pathPolicy.Capabilities.Except(capabilities));
                         }
                         else
                         {
-                            // Explicit deny - return empty
                             return new List<string>();
                         }
                     }
@@ -321,21 +309,60 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
 
     #region Private Helper Methods
 
+    private HclPathPolicy ParsePathPolicy(string path, string body)
+    {
+        var pathPolicy = new HclPathPolicy
+        {
+            Path = path,
+            Capabilities = ExtractCapabilities(body)
+        };
+
+        var allowedMatch = AllowedParamsRegex.Match(body);
+        if (allowedMatch.Success)
+        {
+            pathPolicy.AllowedParameters = ParseAllowedParameters(allowedMatch.Groups[1].Value);
+        }
+
+        var deniedMatch = DeniedParamsRegex.Match(body);
+        if (deniedMatch.Success)
+        {
+            pathPolicy.DeniedParameters = ParseListParameter(deniedMatch.Groups[1].Value);
+        }
+
+        var requiredMatch = RequiredParamsRegex.Match(body);
+        if (requiredMatch.Success)
+        {
+            pathPolicy.RequiredParameters = ParseListParameter(requiredMatch.Groups[1].Value);
+        }
+
+        var minTtlMatch = MinTtlRegex.Match(body);
+        if (minTtlMatch.Success)
+        {
+            pathPolicy.MinWrappingTtl = ParseDuration(minTtlMatch.Groups[1].Value);
+        }
+
+        var maxTtlMatch = MaxTtlRegex.Match(body);
+        if (maxTtlMatch.Success)
+        {
+            pathPolicy.MaxWrappingTtl = ParseDuration(maxTtlMatch.Groups[1].Value);
+        }
+
+        return pathPolicy;
+    }
+
     private List<string> ExtractCapabilities(string body)
     {
         var capabilities = new List<string>();
 
         try
         {
-            // Match: capabilities = ["create", "read", "update"]
-            var capRegex = new Regex(@"capabilities\s*=\s*\[([^\]]+)\]");
-            var match = capRegex.Match(body);
+            var match = CapabilitiesRegex.Match(body);
 
             if (match.Success)
             {
                 var capList = match.Groups[1].Value;
                 var caps = capList.Split(',')
-                    .Select(c => c.Trim().Trim('"', '\''))
+                    .Select(c => c.Trim().Trim('"', '\'', ' '))
                     .Where(c => !string.IsNullOrWhiteSpace(c))
                     .ToList();
 
@@ -356,9 +383,7 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
 
         try
         {
-            // Simple parser for: "key" = ["value1", "value2"]
-            var paramRegex = new Regex(@"""([^""]+)""\s*=\s*\[([^\]]*)\]");
-            var matches = paramRegex.Matches(parametersText);
+            var matches = ParamPairRegex.Matches(parametersText);
 
             foreach (Match match in matches)
             {
@@ -378,33 +403,129 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
     private List<string> ParseListParameter(string listText)
     {
         return listText.Split(',')
-            .Select(v => v.Trim().Trim('"', '\''))
+            .Select(v => v.Trim().Trim('"', '\'', ' '))
             .Where(v => !string.IsNullOrWhiteSpace(v))
             .ToList();
     }
 
+    private int ParseDuration(string duration)
+    {
+        if (string.IsNullOrWhiteSpace(duration))
+        {
+            return 0;
+        }
+
+        var numStr = new string(duration.TakeWhile(char.IsDigit).ToArray());
+        if (!int.TryParse(numStr, out var value))
+        {
+            return 0;
+        }
+
+        var unit = duration.Substring(numStr.Length).Trim().ToLowerInvariant();
+
+        return unit switch
+        {
+            "s" or "" => value,
+            "m" => value * 60,
+            "h" => value * 3600,
+            "d" => value * 86400,
+            _ => value
+        };
+    }
+
     private bool PathMatches(string requestPath, string policyPath)
     {
-        // Convert HCL glob pattern to regex
-        // * matches any sequence except /
-        // + matches any sequence including /
-
         if (policyPath == requestPath)
         {
             return true;
         }
 
-        // Convert glob to regex
-        var regexPattern = "^" + Regex.Escape(policyPath)
-            .Replace("\\*", "[^/]*")
-            .Replace("\\+", ".*") + "$";
+        if (!policyPath.Contains('*') && !policyPath.Contains('+'))
+        {
+            return false;
+        }
 
-        return Regex.IsMatch(requestPath, regexPattern);
+        var segments = policyPath.Split('/', StringSplitOptions.None);
+        var requestSegments = requestPath.Split('/', StringSplitOptions.None);
+
+        return MatchSegments(requestSegments, segments, 0, 0);
+    }
+
+    private bool MatchSegments(string[] requestSegments, string[] patternSegments, int reqIdx, int patIdx)
+    {
+        if (patIdx >= patternSegments.Length && reqIdx >= requestSegments.Length)
+        {
+            return true;
+        }
+
+        if (patIdx >= patternSegments.Length)
+        {
+            return false;
+        }
+
+        var pattern = patternSegments[patIdx];
+
+        if (pattern == "+")
+        {
+            if (patIdx == patternSegments.Length - 1)
+            {
+                return true;
+            }
+
+            for (int i = reqIdx; i < requestSegments.Length; i++)
+            {
+                if (MatchSegments(requestSegments, patternSegments, i + 1, patIdx + 1))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (pattern == "*")
+        {
+            if (reqIdx >= requestSegments.Length)
+            {
+                return false;
+            }
+            return MatchSegments(requestSegments, patternSegments, reqIdx + 1, patIdx + 1);
+        }
+
+        if (reqIdx >= requestSegments.Length)
+        {
+            return false;
+        }
+
+        if (pattern == requestSegments[reqIdx])
+        {
+            return MatchSegments(requestSegments, patternSegments, reqIdx + 1, patIdx + 1);
+        }
+
+        return false;
+    }
+
+    private bool IsValidPathPattern(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        if (path.Contains("**") || path.Contains("++"))
+        {
+            return false;
+        }
+
+        if (path.StartsWith('/') || path.EndsWith('/'))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private bool HasRequiredCapability(string action, List<string> capabilities)
     {
-        // Map actions to capabilities
         var actionCapabilityMap = new Dictionary<string, string>
         {
             { "create", "create" },
@@ -424,8 +545,14 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
             return capabilities.Contains(requiredCapability) || capabilities.Contains("sudo");
         }
 
-        // Default: action must match capability exactly
         return capabilities.Contains(actionLower) || capabilities.Contains("sudo");
+    }
+
+    private string GetPolicyHash(string hclText)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hash = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(hclText));
+        return Convert.ToBase64String(hash).Substring(0, 16);
     }
 
     #endregion
