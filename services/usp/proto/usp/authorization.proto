@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+option csharp_namespace = "USP.Grpc.Authorization";
+
+package usp.authorization;
+
+// Authorization service for permission checks
+service AuthorizationService {
+  // Check if user has permission
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse);
+
+  // Check multiple permissions at once
+  rpc CheckPermissions(CheckPermissionsRequest) returns (CheckPermissionsResponse);
+
+  // Get all permissions for a user
+  rpc GetUserPermissions(GetUserPermissionsRequest) returns (GetUserPermissionsResponse);
+
+  // Get user roles
+  rpc GetUserRoles(GetUserRolesRequest) returns (GetUserRolesResponse);
+
+  // Evaluate policy
+  rpc EvaluatePolicy(EvaluatePolicyRequest) returns (EvaluatePolicyResponse);
+}
+
+// Check permission request
+message CheckPermissionRequest {
+  string user_id = 1;
+  string permission = 2;
+  string resource_id = 3;
+  map<string, string> context = 4;
+}
+
+// Check permission response
+message CheckPermissionResponse {
+  bool allowed = 1;
+  string reason = 2;
+  repeated string required_permissions = 3;
+}
+
+// Check multiple permissions request
+message CheckPermissionsRequest {
+  string user_id = 1;
+  repeated string permissions = 2;
+  string resource_id = 3;
+  map<string, string> context = 4;
+}
+
+// Check multiple permissions response
+message CheckPermissionsResponse {
+  map<string, bool> results = 1;
+  bool all_allowed = 2;
+}
+
+// Get user permissions request
+message GetUserPermissionsRequest {
+  string user_id = 1;
+  string namespace_id = 2;
+}
+
+// Permission info
+message PermissionInfo {
+  string name = 1;
+  string resource = 2;
+  string action = 3;
+  string description = 4;
+}
+
+// Get user permissions response
+message GetUserPermissionsResponse {
+  repeated PermissionInfo permissions = 1;
+}
+
+// Get user roles request
+message GetUserRolesRequest {
+  string user_id = 1;
+  string namespace_id = 2;
+}
+
+// Role info
+message RoleInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  repeated PermissionInfo permissions = 4;
+}
+
+// Get user roles response
+message GetUserRolesResponse {
+  repeated RoleInfo roles = 1;
+}
+
+// Evaluate policy request
+message EvaluatePolicyRequest {
+  string user_id = 1;
+  string action = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  map<string, string> attributes = 5;
+}
+
+// Evaluate policy response
+message EvaluatePolicyResponse {
+  bool allowed = 1;
+  string decision = 2;
+  repeated string matched_policies = 3;
+  string reason = 4;
+}

@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+option csharp_namespace = "USP.Grpc.Authentication";
+
+package usp.authentication;
+
+// Authentication service for inter-service communication
+service AuthenticationService {
+  // Validate JWT token and return claims
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  // Generate service-to-service token
+  rpc GenerateServiceToken(GenerateServiceTokenRequest) returns (GenerateServiceTokenResponse);
+
+  // Verify user credentials
+  rpc VerifyCredentials(VerifyCredentialsRequest) returns (VerifyCredentialsResponse);
+
+  // Get user information
+  rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse);
+
+  // Revoke token
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse);
+}
+
+// Validate token request
+message ValidateTokenRequest {
+  string token = 1;
+  bool include_claims = 2;
+}
+
+// Validate token response
+message ValidateTokenResponse {
+  bool is_valid = 1;
+  string user_id = 2;
+  string username = 3;
+  string email = 4;
+  repeated string roles = 5;
+  map<string, string> claims = 6;
+  int64 expires_at = 7;
+  string error_message = 8;
+}
+
+// Generate service token request
+message GenerateServiceTokenRequest {
+  string service_name = 1;
+  repeated string scopes = 2;
+  int32 expiration_minutes = 3;
+}
+
+// Generate service token response
+message GenerateServiceTokenResponse {
+  string access_token = 1;
+  int64 expires_at = 2;
+  string token_type = 3;
+}
+
+// Verify credentials request
+message VerifyCredentialsRequest {
+  string username = 1;
+  string password = 2;
+  string mfa_code = 3;
+}
+
+// Verify credentials response
+message VerifyCredentialsResponse {
+  bool is_valid = 1;
+  string user_id = 2;
+  bool mfa_required = 3;
+  string error_message = 4;
+}
+
+// Get user info request
+message GetUserInfoRequest {
+  string user_id = 1;
+}
+
+// Get user info response
+message GetUserInfoResponse {
+  string user_id = 1;
+  string username = 2;
+  string email = 3;
+  string first_name = 4;
+  string last_name = 5;
+  repeated string roles = 6;
+  string status = 7;
+  bool mfa_enabled = 8;
+}
+
+// Revoke token request
+message RevokeTokenRequest {
+  string token = 1;
+  string user_id = 2;
+}
+
+// Revoke token response
+message RevokeTokenResponse {
+  bool success = 1;
+  string message = 2;
+}

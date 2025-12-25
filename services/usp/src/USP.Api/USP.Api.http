@@ -1,0 +1,6 @@
+@USP.Api_HostAddress = http://localhost:5073
+
+GET {{USP.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
