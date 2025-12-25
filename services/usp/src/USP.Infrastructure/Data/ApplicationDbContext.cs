@@ -41,6 +41,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<LdapConfiguration> LdapConfigurations { get; set; }
     public DbSet<RiskAssessment> RiskAssessments { get; set; }
     public DbSet<UserRiskProfile> UserRiskProfiles { get; set; }
+    public DbSet<ComplianceReport> ComplianceReports { get; set; }
+    public DbSet<ComplianceControl> ComplianceControls { get; set; }
+    public DbSet<Core.Models.Entities.Webhook> Webhooks { get; set; }
+    public DbSet<WebhookDelivery> WebhookDeliveries { get; set; }
+    public DbSet<PrivilegedSafe> PrivilegedSafes { get; set; }
+    public DbSet<PrivilegedAccount> PrivilegedAccounts { get; set; }
+    public DbSet<AccountCheckout> AccountCheckouts { get; set; }
+    public DbSet<AccessApproval> AccessApprovals { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -115,13 +123,16 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(al => al.Action).HasColumnName("action").HasMaxLength(255);
             entity.Property(al => al.ResourceType).HasColumnName("resource_type").HasMaxLength(255);
             entity.Property(al => al.ResourceId).HasColumnName("resource_id").HasMaxLength(500);
-            entity.Property(al => al.OldValue).HasColumnName("old_value").HasColumnType("jsonb");
-            entity.Property(al => al.NewValue).HasColumnName("new_value").HasColumnType("jsonb");
+            entity.Property(al => al.OldValue).HasColumnName("old_value");
+            entity.Property(al => al.NewValue).HasColumnName("new_value");
             entity.Property(al => al.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
             entity.Property(al => al.UserAgent).HasColumnName("user_agent");
             entity.Property(al => al.Status).HasColumnName("status").HasMaxLength(50);
             entity.Property(al => al.ErrorMessage).HasColumnName("error_message");
             entity.Property(al => al.CreatedAt).HasColumnName("created_at");
+            entity.Property(al => al.PreviousHash).HasColumnName("previous_hash").HasMaxLength(500);
+            entity.Property(al => al.CurrentHash).HasColumnName("current_hash").HasMaxLength(500);
+            entity.Property(al => al.CorrelationId).HasColumnName("correlation_id").HasMaxLength(100);
 
             entity.HasOne(al => al.User)
                 .WithMany(u => u.AuditLogs)
@@ -132,6 +143,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.HasIndex(al => al.Action).HasDatabaseName("idx_audit_logs_action");
             entity.HasIndex(al => al.ResourceType).HasDatabaseName("idx_audit_logs_resource_type");
             entity.HasIndex(al => al.CreatedAt).HasDatabaseName("idx_audit_logs_created_at");
+            entity.HasIndex(al => al.CorrelationId).HasDatabaseName("idx_audit_logs_correlation_id");
         });
 
         // Configure ApiKey
@@ -160,6 +172,301 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.HasIndex(ak => ak.UserId).HasDatabaseName("idx_api_keys_user_id");
             entity.HasIndex(ak => ak.KeyHash).HasDatabaseName("idx_api_keys_key_hash").IsUnique();
             entity.HasIndex(ak => ak.Revoked).HasDatabaseName("idx_api_keys_revoked");
+        });
+
+        // Configure ComplianceReport
+        builder.Entity<ComplianceReport>(entity =>
+        {
+            entity.ToTable("compliance_reports");
+            entity.HasKey(cr => cr.Id);
+
+            entity.Property(cr => cr.Id).HasColumnName("id");
+            entity.Property(cr => cr.Framework).HasColumnName("framework").HasMaxLength(100);
+            entity.Property(cr => cr.ReportType).HasColumnName("report_type").HasMaxLength(100);
+            entity.Property(cr => cr.GeneratedAt).HasColumnName("generated_at");
+            entity.Property(cr => cr.PeriodStart).HasColumnName("period_start");
+            entity.Property(cr => cr.PeriodEnd).HasColumnName("period_end");
+            entity.Property(cr => cr.GeneratedBy).HasColumnName("generated_by");
+            entity.Property(cr => cr.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(cr => cr.ReportPath).HasColumnName("report_path").HasMaxLength(1000);
+            entity.Property(cr => cr.Format).HasColumnName("format").HasMaxLength(50);
+            entity.Property(cr => cr.TotalControls).HasColumnName("total_controls");
+            entity.Property(cr => cr.ImplementedControls).HasColumnName("implemented_controls");
+            entity.Property(cr => cr.PartialControls).HasColumnName("partial_controls");
+            entity.Property(cr => cr.NotImplementedControls).HasColumnName("not_implemented_controls");
+            entity.Property(cr => cr.ComplianceScore).HasColumnName("compliance_score");
+            entity.Property(cr => cr.Summary).HasColumnName("summary");
+            entity.Property(cr => cr.Recommendations).HasColumnName("recommendations");
+
+            entity.HasOne(cr => cr.GeneratedByUser)
+                .WithMany()
+                .HasForeignKey(cr => cr.GeneratedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(cr => cr.Framework).HasDatabaseName("idx_compliance_reports_framework");
+            entity.HasIndex(cr => cr.GeneratedAt).HasDatabaseName("idx_compliance_reports_generated_at");
+            entity.HasIndex(cr => cr.Status).HasDatabaseName("idx_compliance_reports_status");
+        });
+
+        // Configure ComplianceControl
+        builder.Entity<ComplianceControl>(entity =>
+        {
+            entity.ToTable("compliance_controls");
+            entity.HasKey(cc => cc.Id);
+
+            entity.Property(cc => cc.Id).HasColumnName("id");
+            entity.Property(cc => cc.ReportId).HasColumnName("report_id");
+            entity.Property(cc => cc.ControlId).HasColumnName("control_id").HasMaxLength(100);
+            entity.Property(cc => cc.ControlName).HasColumnName("control_name").HasMaxLength(500);
+            entity.Property(cc => cc.ControlDescription).HasColumnName("control_description");
+            entity.Property(cc => cc.Category).HasColumnName("category").HasMaxLength(200);
+            entity.Property(cc => cc.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(cc => cc.Implementation).HasColumnName("implementation");
+            entity.Property(cc => cc.Evidence).HasColumnName("evidence");
+            entity.Property(cc => cc.Gaps).HasColumnName("gaps");
+            entity.Property(cc => cc.LastAssessed).HasColumnName("last_assessed");
+            entity.Property(cc => cc.AssessedBy).HasColumnName("assessed_by");
+
+            entity.HasOne(cc => cc.Report)
+                .WithMany(cr => cr.Controls)
+                .HasForeignKey(cc => cc.ReportId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(cc => cc.AssessedByUser)
+                .WithMany()
+                .HasForeignKey(cc => cc.AssessedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(cc => cc.ReportId).HasDatabaseName("idx_compliance_controls_report_id");
+            entity.HasIndex(cc => cc.ControlId).HasDatabaseName("idx_compliance_controls_control_id");
+            entity.HasIndex(cc => cc.Status).HasDatabaseName("idx_compliance_controls_status");
+        });
+
+        // Configure Webhook
+        builder.Entity<Core.Models.Entities.Webhook>(entity =>
+        {
+            entity.ToTable("webhooks");
+            entity.HasKey(w => w.Id);
+
+            entity.Property(w => w.Id).HasColumnName("id");
+            entity.Property(w => w.UserId).HasColumnName("user_id");
+            entity.Property(w => w.Name).HasColumnName("name").HasMaxLength(255);
+            entity.Property(w => w.Url).HasColumnName("url").HasMaxLength(2000);
+            entity.Property(w => w.Description).HasColumnName("description");
+            entity.Property(w => w.Events).HasColumnName("events").HasColumnType("jsonb");
+            entity.Property(w => w.Active).HasColumnName("active");
+            entity.Property(w => w.AuthenticationType).HasColumnName("authentication_type").HasMaxLength(50);
+            entity.Property(w => w.SecretToken).HasColumnName("secret_token").HasMaxLength(500);
+            entity.Property(w => w.OAuth2ClientId).HasColumnName("oauth2_client_id").HasMaxLength(255);
+            entity.Property(w => w.OAuth2ClientSecret).HasColumnName("oauth2_client_secret").HasMaxLength(500);
+            entity.Property(w => w.OAuth2TokenUrl).HasColumnName("oauth2_token_url").HasMaxLength(2000);
+            entity.Property(w => w.CustomHeaders).HasColumnName("custom_headers").HasColumnType("jsonb");
+            entity.Property(w => w.PayloadTemplate).HasColumnName("payload_template");
+            entity.Property(w => w.MaxRetries).HasColumnName("max_retries");
+            entity.Property(w => w.TimeoutSeconds).HasColumnName("timeout_seconds");
+            entity.Property(w => w.VerifySsl).HasColumnName("verify_ssl");
+            entity.Property(w => w.CircuitBreakerState).HasColumnName("circuit_breaker_state").HasMaxLength(50);
+            entity.Property(w => w.ConsecutiveFailures).HasColumnName("consecutive_failures");
+            entity.Property(w => w.CircuitBreakerOpenedAt).HasColumnName("circuit_breaker_opened_at");
+            entity.Property(w => w.CircuitBreakerThreshold).HasColumnName("circuit_breaker_threshold");
+            entity.Property(w => w.CircuitBreakerResetMinutes).HasColumnName("circuit_breaker_reset_minutes");
+            entity.Property(w => w.TotalDeliveries).HasColumnName("total_deliveries");
+            entity.Property(w => w.SuccessfulDeliveries).HasColumnName("successful_deliveries");
+            entity.Property(w => w.FailedDeliveries).HasColumnName("failed_deliveries");
+            entity.Property(w => w.LastTriggeredAt).HasColumnName("last_triggered_at");
+            entity.Property(w => w.LastSuccessAt).HasColumnName("last_success_at");
+            entity.Property(w => w.LastFailureAt).HasColumnName("last_failure_at");
+            entity.Property(w => w.CreatedAt).HasColumnName("created_at");
+            entity.Property(w => w.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(w => w.User)
+                .WithMany()
+                .HasForeignKey(w => w.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(w => w.UserId).HasDatabaseName("idx_webhooks_user_id");
+            entity.HasIndex(w => w.Active).HasDatabaseName("idx_webhooks_active");
+            entity.HasIndex(w => w.Events).HasDatabaseName("idx_webhooks_events").HasMethod("gin");
+        });
+
+        // Configure WebhookDelivery
+        builder.Entity<WebhookDelivery>(entity =>
+        {
+            entity.ToTable("webhook_deliveries");
+            entity.HasKey(wd => wd.Id);
+
+            entity.Property(wd => wd.Id).HasColumnName("id");
+            entity.Property(wd => wd.WebhookId).HasColumnName("webhook_id");
+            entity.Property(wd => wd.EventType).HasColumnName("event_type").HasMaxLength(255);
+            entity.Property(wd => wd.Payload).HasColumnName("payload").HasColumnType("jsonb");
+            entity.Property(wd => wd.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(wd => wd.AttemptCount).HasColumnName("attempt_count");
+            entity.Property(wd => wd.ResponseStatus).HasColumnName("response_status");
+            entity.Property(wd => wd.ResponseBody).HasColumnName("response_body");
+            entity.Property(wd => wd.ErrorMessage).HasColumnName("error_message");
+            entity.Property(wd => wd.DurationMs).HasColumnName("duration_ms");
+            entity.Property(wd => wd.HmacSignature).HasColumnName("hmac_signature").HasMaxLength(500);
+            entity.Property(wd => wd.CreatedAt).HasColumnName("created_at");
+            entity.Property(wd => wd.DeliveredAt).HasColumnName("delivered_at");
+            entity.Property(wd => wd.NextRetryAt).HasColumnName("next_retry_at");
+
+            entity.HasOne(wd => wd.Webhook)
+                .WithMany(w => w.Deliveries)
+                .HasForeignKey(wd => wd.WebhookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(wd => wd.WebhookId).HasDatabaseName("idx_webhook_deliveries_webhook_id");
+            entity.HasIndex(wd => wd.EventType).HasDatabaseName("idx_webhook_deliveries_event_type");
+            entity.HasIndex(wd => wd.Status).HasDatabaseName("idx_webhook_deliveries_status");
+            entity.HasIndex(wd => wd.CreatedAt).HasDatabaseName("idx_webhook_deliveries_created_at");
+            entity.HasIndex(wd => wd.NextRetryAt).HasDatabaseName("idx_webhook_deliveries_next_retry_at");
+        });
+
+        // Configure PrivilegedSafe
+        builder.Entity<PrivilegedSafe>(entity =>
+        {
+            entity.ToTable("privileged_safes");
+            entity.HasKey(ps => ps.Id);
+
+            entity.Property(ps => ps.Id).HasColumnName("id");
+            entity.Property(ps => ps.Name).HasColumnName("name").HasMaxLength(255);
+            entity.Property(ps => ps.Description).HasColumnName("description");
+            entity.Property(ps => ps.OwnerId).HasColumnName("owner_id");
+            entity.Property(ps => ps.SafeType).HasColumnName("safe_type").HasMaxLength(50);
+            entity.Property(ps => ps.AccessControl).HasColumnName("access_control").HasColumnType("jsonb");
+            entity.Property(ps => ps.RequireApproval).HasColumnName("require_approval");
+            entity.Property(ps => ps.RequireDualControl).HasColumnName("require_dual_control");
+            entity.Property(ps => ps.MaxCheckoutDurationMinutes).HasColumnName("max_checkout_duration_minutes");
+            entity.Property(ps => ps.RotateOnCheckin).HasColumnName("rotate_on_checkin");
+            entity.Property(ps => ps.SessionRecordingEnabled).HasColumnName("session_recording_enabled");
+            entity.Property(ps => ps.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+            entity.Property(ps => ps.CreatedAt).HasColumnName("created_at");
+            entity.Property(ps => ps.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(ps => ps.Owner)
+                .WithMany()
+                .HasForeignKey(ps => ps.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(ps => ps.OwnerId).HasDatabaseName("idx_privileged_safes_owner_id");
+            entity.HasIndex(ps => ps.SafeType).HasDatabaseName("idx_privileged_safes_safe_type");
+        });
+
+        // Configure PrivilegedAccount
+        builder.Entity<PrivilegedAccount>(entity =>
+        {
+            entity.ToTable("privileged_accounts");
+            entity.HasKey(pa => pa.Id);
+
+            entity.Property(pa => pa.Id).HasColumnName("id");
+            entity.Property(pa => pa.SafeId).HasColumnName("safe_id");
+            entity.Property(pa => pa.AccountName).HasColumnName("account_name").HasMaxLength(255);
+            entity.Property(pa => pa.Username).HasColumnName("username").HasMaxLength(255);
+            entity.Property(pa => pa.EncryptedPassword).HasColumnName("encrypted_password");
+            entity.Property(pa => pa.Platform).HasColumnName("platform").HasMaxLength(100);
+            entity.Property(pa => pa.HostAddress).HasColumnName("host_address").HasMaxLength(500);
+            entity.Property(pa => pa.Port).HasColumnName("port");
+            entity.Property(pa => pa.DatabaseName).HasColumnName("database_name").HasMaxLength(255);
+            entity.Property(pa => pa.ConnectionDetails).HasColumnName("connection_details").HasColumnType("jsonb");
+            entity.Property(pa => pa.RotationPolicy).HasColumnName("rotation_policy").HasMaxLength(50);
+            entity.Property(pa => pa.RotationIntervalDays).HasColumnName("rotation_interval_days");
+            entity.Property(pa => pa.LastRotated).HasColumnName("last_rotated");
+            entity.Property(pa => pa.NextRotation).HasColumnName("next_rotation");
+            entity.Property(pa => pa.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(pa => pa.PasswordComplexity).HasColumnName("password_complexity");
+            entity.Property(pa => pa.RequireMfa).HasColumnName("require_mfa");
+            entity.Property(pa => pa.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+            entity.Property(pa => pa.CreatedAt).HasColumnName("created_at");
+            entity.Property(pa => pa.UpdatedAt).HasColumnName("updated_at");
+
+            entity.HasOne(pa => pa.Safe)
+                .WithMany(ps => ps.Accounts)
+                .HasForeignKey(pa => pa.SafeId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(pa => pa.SafeId).HasDatabaseName("idx_privileged_accounts_safe_id");
+            entity.HasIndex(pa => pa.Platform).HasDatabaseName("idx_privileged_accounts_platform");
+            entity.HasIndex(pa => pa.Status).HasDatabaseName("idx_privileged_accounts_status");
+            entity.HasIndex(pa => pa.NextRotation).HasDatabaseName("idx_privileged_accounts_next_rotation");
+        });
+
+        // Configure AccountCheckout
+        builder.Entity<AccountCheckout>(entity =>
+        {
+            entity.ToTable("account_checkouts");
+            entity.HasKey(ac => ac.Id);
+
+            entity.Property(ac => ac.Id).HasColumnName("id");
+            entity.Property(ac => ac.AccountId).HasColumnName("account_id");
+            entity.Property(ac => ac.UserId).HasColumnName("user_id");
+            entity.Property(ac => ac.CheckedOutAt).HasColumnName("checked_out_at");
+            entity.Property(ac => ac.CheckedInAt).HasColumnName("checked_in_at");
+            entity.Property(ac => ac.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(ac => ac.Reason).HasColumnName("reason");
+            entity.Property(ac => ac.ApprovalId).HasColumnName("approval_id");
+            entity.Property(ac => ac.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(ac => ac.RotateOnCheckin).HasColumnName("rotate_on_checkin");
+            entity.Property(ac => ac.WasRotated).HasColumnName("was_rotated");
+            entity.Property(ac => ac.SessionRecordingPath).HasColumnName("session_recording_path").HasMaxLength(1000);
+            entity.Property(ac => ac.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(ac => ac.UserAgent).HasColumnName("user_agent");
+            entity.Property(ac => ac.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+
+            entity.HasOne(ac => ac.Account)
+                .WithMany(pa => pa.Checkouts)
+                .HasForeignKey(ac => ac.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ac => ac.User)
+                .WithMany()
+                .HasForeignKey(ac => ac.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ac => ac.Approval)
+                .WithMany(aa => aa.Checkouts)
+                .HasForeignKey(ac => ac.ApprovalId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(ac => ac.AccountId).HasDatabaseName("idx_account_checkouts_account_id");
+            entity.HasIndex(ac => ac.UserId).HasDatabaseName("idx_account_checkouts_user_id");
+            entity.HasIndex(ac => ac.Status).HasDatabaseName("idx_account_checkouts_status");
+            entity.HasIndex(ac => ac.ExpiresAt).HasDatabaseName("idx_account_checkouts_expires_at");
+        });
+
+        // Configure AccessApproval
+        builder.Entity<AccessApproval>(entity =>
+        {
+            entity.ToTable("access_approvals");
+            entity.HasKey(aa => aa.Id);
+
+            entity.Property(aa => aa.Id).HasColumnName("id");
+            entity.Property(aa => aa.RequesterId).HasColumnName("requester_id");
+            entity.Property(aa => aa.ResourceType).HasColumnName("resource_type").HasMaxLength(100);
+            entity.Property(aa => aa.ResourceId).HasColumnName("resource_id");
+            entity.Property(aa => aa.Reason).HasColumnName("reason");
+            entity.Property(aa => aa.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(aa => aa.ApprovalPolicy).HasColumnName("approval_policy").HasMaxLength(50);
+            entity.Property(aa => aa.RequiredApprovals).HasColumnName("required_approvals");
+            entity.Property(aa => aa.CurrentApprovals).HasColumnName("current_approvals");
+            entity.Property(aa => aa.Approvers).HasColumnName("approvers").HasColumnType("jsonb");
+            entity.Property(aa => aa.ApprovedBy).HasColumnName("approved_by").HasColumnType("jsonb");
+            entity.Property(aa => aa.DeniedBy).HasColumnName("denied_by").HasMaxLength(100);
+            entity.Property(aa => aa.DenialReason).HasColumnName("denial_reason");
+            entity.Property(aa => aa.RequestedAt).HasColumnName("requested_at");
+            entity.Property(aa => aa.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(aa => aa.ApprovedAt).HasColumnName("approved_at");
+            entity.Property(aa => aa.DeniedAt).HasColumnName("denied_at");
+            entity.Property(aa => aa.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+
+            entity.HasOne(aa => aa.Requester)
+                .WithMany()
+                .HasForeignKey(aa => aa.RequesterId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(aa => aa.RequesterId).HasDatabaseName("idx_access_approvals_requester_id");
+            entity.HasIndex(aa => aa.Status).HasDatabaseName("idx_access_approvals_status");
+            entity.HasIndex(aa => aa.ResourceType).HasDatabaseName("idx_access_approvals_resource_type");
+            entity.HasIndex(aa => aa.ExpiresAt).HasDatabaseName("idx_access_approvals_expires_at");
         });
 
         // Ignore Identity tables we don't need

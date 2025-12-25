@@ -28,10 +28,17 @@ public class AuditLog
     public string? ErrorMessage { get; set; }
     public int DurationMs { get; set; }
     public string? Metadata { get; set; }
-    public JsonDocument? OldValue { get; set; }
-    public JsonDocument? NewValue { get; set; }
+    public string? OldValue { get; set; }
+    public string? NewValue { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Tamper-proof chain fields
+    public string? PreviousHash { get; set; }
+    public string? CurrentHash { get; set; }
+
+    // Correlation tracking
+    public string? CorrelationId { get; set; }
 
     // Navigation properties
     public virtual ApplicationUser? User { get; set; }

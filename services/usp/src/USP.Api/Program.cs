@@ -14,24 +14,34 @@ using USP.Api.Middleware;
 using Fido2NetLib;
 using USP.Core.Models.Configuration;
 using USP.Core.Models.Entities;
+using USP.Core.Services.ApiKey;
+using USP.Core.Services.Audit;
 using USP.Core.Services.Authentication;
 using USP.Core.Services.Authorization;
 using USP.Core.Services.Communication;
+using USP.Core.Services.Compliance;
 using USP.Core.Services.Cryptography;
 using USP.Core.Services.Device;
 using USP.Core.Services.Mfa;
+using USP.Core.Services.PAM;
 using USP.Core.Services.Secrets;
 using USP.Core.Services.Session;
+using USP.Core.Services.Webhook;
 using USP.Core.Validators.Authentication;
 using USP.Infrastructure.Data;
+using USP.Infrastructure.Services.ApiKey;
+using USP.Infrastructure.Services.Audit;
 using USP.Infrastructure.Services.Authentication;
 using USP.Infrastructure.Services.Authorization;
 using USP.Infrastructure.Services.Communication;
+using USP.Infrastructure.Services.Compliance;
 using USP.Infrastructure.Services.Cryptography;
 using USP.Infrastructure.Services.Device;
 using USP.Infrastructure.Services.Mfa;
+using USP.Infrastructure.Services.PAM;
 using USP.Infrastructure.Services.Secrets;
 using USP.Infrastructure.Services.Session;
+using USP.Infrastructure.Services.Webhook;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -174,6 +184,19 @@ try
     builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
     builder.Services.AddScoped<IRoleService, RoleService>();
     builder.Services.AddScoped<ISessionManagementService, SessionManagementService>();
+    builder.Services.AddScoped<IApiKeyManagementService, ApiKeyManagementService>();
+
+    // Audit and Compliance Services
+    builder.Services.AddScoped<IAuditService, AuditService>();
+    builder.Services.AddScoped<IComplianceEngine, ComplianceEngine>();
+
+    // Webhook Services
+    builder.Services.AddScoped<IWebhookService, WebhookService>();
+
+    // PAM Services
+    builder.Services.AddScoped<ISafeManagementService, SafeManagementService>();
+    builder.Services.AddScoped<ICheckoutService, CheckoutService>();
+    builder.Services.AddScoped<IDualControlService, DualControlService>();
 
     // Advanced Authentication Services
     builder.Services.AddScoped<IWebAuthnService, WebAuthnService>();
@@ -325,6 +348,9 @@ try
     app.UseHttpMetrics();
 
     app.UseCors();
+
+    // API key authentication middleware (before JWT authentication)
+    app.UseApiKeyAuthentication();
 
     app.UseAuthentication();
     app.UseAuthorization();
