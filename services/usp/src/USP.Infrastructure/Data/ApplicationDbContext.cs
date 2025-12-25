@@ -49,6 +49,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<PrivilegedAccount> PrivilegedAccounts { get; set; }
     public DbSet<AccountCheckout> AccountCheckouts { get; set; }
     public DbSet<AccessApproval> AccessApprovals { get; set; }
+    public DbSet<PrivilegedSession> PrivilegedSessions { get; set; }
+    public DbSet<SessionCommand> SessionCommands { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -467,6 +469,89 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.HasIndex(aa => aa.Status).HasDatabaseName("idx_access_approvals_status");
             entity.HasIndex(aa => aa.ResourceType).HasDatabaseName("idx_access_approvals_resource_type");
             entity.HasIndex(aa => aa.ExpiresAt).HasDatabaseName("idx_access_approvals_expires_at");
+        });
+
+        // Configure PrivilegedSession
+        builder.Entity<PrivilegedSession>(entity =>
+        {
+            entity.ToTable("privileged_sessions");
+            entity.HasKey(ps => ps.Id);
+
+            entity.Property(ps => ps.Id).HasColumnName("id");
+            entity.Property(ps => ps.AccountCheckoutId).HasColumnName("account_checkout_id");
+            entity.Property(ps => ps.AccountId).HasColumnName("account_id");
+            entity.Property(ps => ps.UserId).HasColumnName("user_id");
+            entity.Property(ps => ps.StartTime).HasColumnName("start_time");
+            entity.Property(ps => ps.EndTime).HasColumnName("end_time");
+            entity.Property(ps => ps.Protocol).HasColumnName("protocol").HasMaxLength(50);
+            entity.Property(ps => ps.Platform).HasColumnName("platform").HasMaxLength(100);
+            entity.Property(ps => ps.HostAddress).HasColumnName("host_address").HasMaxLength(500);
+            entity.Property(ps => ps.Port).HasColumnName("port");
+            entity.Property(ps => ps.RecordingPath).HasColumnName("recording_path").HasMaxLength(1000);
+            entity.Property(ps => ps.RecordingSize).HasColumnName("recording_size");
+            entity.Property(ps => ps.SessionType).HasColumnName("session_type").HasMaxLength(50);
+            entity.Property(ps => ps.CommandCount).HasColumnName("command_count");
+            entity.Property(ps => ps.QueryCount).HasColumnName("query_count");
+            entity.Property(ps => ps.SuspiciousActivityDetected).HasColumnName("suspicious_activity_detected");
+            entity.Property(ps => ps.SuspiciousActivityDetails).HasColumnName("suspicious_activity_details");
+            entity.Property(ps => ps.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(ps => ps.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(ps => ps.UserAgent).HasColumnName("user_agent");
+            entity.Property(ps => ps.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+            entity.Property(ps => ps.CreatedAt).HasColumnName("created_at");
+
+            entity.HasOne(ps => ps.Checkout)
+                .WithMany()
+                .HasForeignKey(ps => ps.AccountCheckoutId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ps => ps.Account)
+                .WithMany()
+                .HasForeignKey(ps => ps.AccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(ps => ps.User)
+                .WithMany()
+                .HasForeignKey(ps => ps.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(ps => ps.AccountCheckoutId).HasDatabaseName("idx_privileged_sessions_checkout_id");
+            entity.HasIndex(ps => ps.AccountId).HasDatabaseName("idx_privileged_sessions_account_id");
+            entity.HasIndex(ps => ps.UserId).HasDatabaseName("idx_privileged_sessions_user_id");
+            entity.HasIndex(ps => ps.Status).HasDatabaseName("idx_privileged_sessions_status");
+            entity.HasIndex(ps => ps.StartTime).HasDatabaseName("idx_privileged_sessions_start_time");
+            entity.HasIndex(ps => ps.SuspiciousActivityDetected).HasDatabaseName("idx_privileged_sessions_suspicious");
+        });
+
+        // Configure SessionCommand
+        builder.Entity<SessionCommand>(entity =>
+        {
+            entity.ToTable("session_commands");
+            entity.HasKey(sc => sc.Id);
+
+            entity.Property(sc => sc.Id).HasColumnName("id");
+            entity.Property(sc => sc.SessionId).HasColumnName("session_id");
+            entity.Property(sc => sc.ExecutedAt).HasColumnName("executed_at");
+            entity.Property(sc => sc.CommandType).HasColumnName("command_type").HasMaxLength(50);
+            entity.Property(sc => sc.Command).HasColumnName("command");
+            entity.Property(sc => sc.Response).HasColumnName("response");
+            entity.Property(sc => sc.ResponseSize).HasColumnName("response_size");
+            entity.Property(sc => sc.Success).HasColumnName("success");
+            entity.Property(sc => sc.ErrorMessage).HasColumnName("error_message");
+            entity.Property(sc => sc.ExecutionTimeMs).HasColumnName("execution_time_ms");
+            entity.Property(sc => sc.IsSuspicious).HasColumnName("is_suspicious");
+            entity.Property(sc => sc.SuspiciousReason).HasColumnName("suspicious_reason");
+            entity.Property(sc => sc.SequenceNumber).HasColumnName("sequence_number");
+
+            entity.HasOne(sc => sc.Session)
+                .WithMany(ps => ps.Commands)
+                .HasForeignKey(sc => sc.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(sc => sc.SessionId).HasDatabaseName("idx_session_commands_session_id");
+            entity.HasIndex(sc => sc.ExecutedAt).HasDatabaseName("idx_session_commands_executed_at");
+            entity.HasIndex(sc => sc.IsSuspicious).HasDatabaseName("idx_session_commands_suspicious");
+            entity.HasIndex(sc => sc.SequenceNumber).HasDatabaseName("idx_session_commands_sequence");
         });
 
         // Ignore Identity tables we don't need
