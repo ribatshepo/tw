@@ -94,7 +94,7 @@ The platform consists of five primary services that work together:
 | UCCP | Go, Rust, Python | Raft, gRPC, Ray, TensorFlow, PyTorch |
 | NCCS | C# 12, .NET 8 | ASP.NET Core, SignalR, Entity Framework |
 | UDPS | Scala, Java | Calcite, Arrow, Parquet, Akka |
-| USP | C# 12, .NET 8 | ASP.NET Core, Vault, HSM |
+| USP | C# 12, .NET 8 | ASP.NET Core, PostgreSQL, HSM |
 | Stream Compute | Rust, Scala | Apache Flink, Kafka, SIMD |
 
 ## Specification Documents
@@ -160,8 +160,9 @@ When implementing services, these infrastructure components are required:
 - Grafana (visualization)
 
 **Security & Secrets:**
-- HashiCorp Vault (secrets management)
 - Certificate Authority (mTLS certificates)
+
+**Note:** Secrets management is provided by USP service (application layer), not external infrastructure.
 
 **Orchestration:**
 - Kubernetes (container orchestration)
@@ -306,7 +307,7 @@ When implementation begins:
 4. **Service Registration:** Register services with UCCP for discovery
 5. **Integration Tests:** Write tests that span multiple services
 6. **Observability:** Ensure metrics, logs, and traces are working
-7. **Security:** Never bypass mTLS, always use Vault for secrets
+7. **Security:** Never bypass mTLS, always use USP for secrets
 
 ## Notes for Implementation
 
