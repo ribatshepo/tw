@@ -35,7 +35,7 @@ The Unified Security Platform is the comprehensive security backbone for the Sec
 - Location-based access restrictions
 
 **Secrets Management:**
-- Vault-compatible KV engine with versioning
+- Vault API compatible KV engine with versioning (native USP feature)
 - Transit engine (encryption-as-a-service)
 - PKI engine with full certificate lifecycle
 - Shamir's Secret Sharing seal/unseal mechanism
@@ -52,7 +52,7 @@ The Unified Security Platform is the comprehensive security backbone for the Sec
 - Just-In-Time (JIT) access provisioning
 - Break-glass emergency access
 - Privileged session monitoring
-- Password vaulting and auto-rotation
+- Password storage and auto-rotation
 
 **Encryption & Cryptography:**
 - AES-256-GCM/CBC encryption
@@ -381,7 +381,7 @@ Generate backup codes → Store securely
 - `SystemAdmin` - System configuration
 - `SecurityAdmin` - Security policy management
 - `AuthAdmin` - User and authentication management
-- `SecretsAdmin` - Secrets and vault administration
+- `SecretsAdmin` - Secrets management administration
 - `CatalogAdmin` - Data catalog administration
 - `PAMAdmin` - Privileged access management
 - `ComplianceOfficer` - Compliance and audit access
@@ -525,9 +525,11 @@ Stage 5: Grant time-limited access (4 hours)
 
 ---
 
-### 4. Vault-Compatible Secrets Management
+### 4. Enterprise Secrets Management (Vault API Compatible)
 
-**Description:** Enterprise secrets management with full HashiCorp Vault API compatibility, supporting multiple secret engines and automated lifecycle management.
+**Description:** Native enterprise secrets management with HashiCorp Vault API compatibility for ease of migration, supporting multiple secret engines and automated lifecycle management.
+
+**Note:** USP provides secrets management natively. It is not a client to HashiCorp Vault - it IS the secrets provider. USP implements the Vault KV v2 API for compatibility and familiarity. All secrets are stored encrypted in PostgreSQL (usp_db) using AES-256-GCM encryption.
 
 **A. KV Engine v2:**
 - Path-based secret organization
@@ -749,7 +751,7 @@ Audit log updated → Session recording available
 - Video evidence capture
 - Executive approval logging
 
-**H. Password Vaulting & Rotation:**
+**H. Password Storage & Rotation:**
 - Automatic password rotation
 - Scheduled rotation policies
 - Rotation on checkout/checkin
@@ -1727,7 +1729,7 @@ Audit log updated → Session recording available
 | POST | `/api/v1/policies/abac` | Create ABAC policy | Yes (Admin) |
 | POST | `/api/v1/policies/hcl` | Create HCL policy | Yes (Admin) |
 
-### Vault API (Secrets)
+### Secrets API (Vault Compatible)
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
@@ -1883,8 +1885,8 @@ Unified policy model:
 | `LEGACY_AUTH_PORT` | int | 5001 | Legacy auth API port |
 | `GRPC_PORT` | int | 50005 | gRPC port |
 | `METRICS_PORT` | int | 9090 | Prometheus metrics |
-| `ConnectionStrings__MainDatabase` | string | (from Vault) | PostgreSQL connection |
-| `Redis__ConnectionString` | string | (from Vault) | Redis connection |
+| `ConnectionStrings__MainDatabase` | string | (from USP) | PostgreSQL connection |
+| `Redis__ConnectionString` | string | (from USP) | Redis connection |
 | `RabbitMQ__Host` | string | rabbitmq | Message queue host |
 | `Shamir__Threshold` | int | 3 | Unseal keys required |
 | `Shamir__Shares` | int | 5 | Total unseal keys |
@@ -1913,7 +1915,7 @@ Unified policy model:
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 8443 | HTTPS | Primary API (Vault, Secrets, PAM) |
+| 8443 | HTTPS | Primary API (Secrets, PAM, Auth) |
 | 5001 | HTTPS | Legacy Auth API |
 | 50005 | gRPC/TLS | Service-to-service |
 | 9090 | HTTP | Prometheus metrics |
@@ -2136,7 +2138,7 @@ The **Unified Security Platform** is a comprehensive, enterprise-grade security 
 - Advanced MFA with multiple delivery methods
 
 **Enterprise Secrets Management:**
-- Vault-compatible API
+- Vault API compatible (native USP implementation)
 - Multi-engine architecture (KV, Transit, PKI, Database, SSH)
 - Automated credential rotation
 - Cloud synchronization

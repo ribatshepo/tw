@@ -73,7 +73,7 @@ The Unified Compute & Coordination Platform is the central backbone service for 
 - JWT-based authentication and authorization
 - Role-based access control (RBAC)
 - Attribute-based access control (ABAC)
-- Secrets management integration (HashiCorp Vault)
+- Secrets management integration (USP)
 - Audit logging with tamper-proof storage
 - Data encryption at rest and in transit (AES-256, TLS 1.3)
 - Certificate rotation and management
@@ -203,13 +203,13 @@ graph TB
     end
     
     subgraph "External Integrations"
-        VaultService[HashiCorp Vault<br/>Secrets]
+        VaultService[USP<br/>Secrets Management]
         CertManager[Cert Manager<br/>TLS Certificates]
         OIDC[OIDC Provider<br/>Auth0/Keycloak]
         CloudProviders[Cloud Providers<br/>AWS/GCP/Azure]
         K8s[Kubernetes<br/>Orchestration]
     end
-    
+
     Leader --> VaultService
     Leader --> CertManager
     ServiceRegistry --> OIDC
@@ -1032,7 +1032,7 @@ graph TB
 - Field-level encryption
 
 **Secrets Management:**
-- HashiCorp Vault integration
+- USP (Unified Security Platform) integration
 - AWS Secrets Manager integration
 - Azure Key Vault integration
 - GCP Secret Manager integration
@@ -1389,9 +1389,9 @@ graph TB
 | `ENABLE_MTLS` | bool | true | Enable mutual TLS |
 | `RAFT_DIR` | string | /data/raft | Raft data directory |
 | `JOIN_ADDRESS` | string | - | Leader address for cluster join |
-| `VAULT_ADDR` | string | (required) | Vault server URL |
-| `VAULT_TOKEN` | string | (required) | Vault access token |
-| `VAULT_SECRET_PATH` | string | secret/uccp | Vault secret path |
+| `USP_BASE_URL` | string | (required) | USP server URL |
+| `USP_SERVICE_TOKEN` | string | (required) | USP service token |
+| `USP_SECRET_PATH` | string | secret/uccp | USP secret path |
 | `POSTGRES_URL` | string | (required) | PostgreSQL connection string |
 | `REDIS_URL` | string | (required) | Redis connection string |
 | `S3_ENDPOINT` | string | (required) | S3/MinIO endpoint |
@@ -1490,7 +1490,7 @@ graph TB
 - Strong cipher suites (TLS 1.3)
 
 **Secrets Management:**
-- Vault integration for all secrets
+- USP integration for all secrets
 - Automatic secret rotation
 - Secret versioning
 - Secret access auditing
@@ -2193,12 +2193,12 @@ graph TB
     
     subgraph "External Services"
         UCCP[Unified Compute &<br/>Coordination Platform]
-        Vault[HashiCorp Vault<br/>Secrets]
+        Vault[USP<br/>Secrets Management]
         IdentityProvider[Identity Provider<br/>Auth0/Keycloak]
         EmailService[Email Service<br/>SendGrid]
         SMSService[SMS Service<br/>Twilio]
     end
-    
+
     UCCPClient --> UCCP
     AuthManager --> Vault
     AuthManager --> IdentityProvider
@@ -2988,7 +2988,7 @@ graph TB
 - Azure App Configuration
 - AWS Systems Manager Parameter Store
 - User secrets (development)
-- HashiCorp Vault
+- USP (Unified Security Platform)
 
 **Configuration Sections:**
 
@@ -3089,8 +3089,8 @@ graph TB
 | `Cache__ConnectionString` | string | Cache connection string |
 | `MessageQueue__Provider` | string | Queue provider |
 | `MessageQueue__ConnectionString` | string | Queue connection string |
-| `Vault__Address` | string | Vault server URL |
-| `Vault__Token` | string | Vault token |
+| `USP__BaseUrl` | string | USP server URL |
+| `USP__ServiceToken` | string | USP service token |
 | `Logging__LogLevel__Default` | string | Default log level |
 | `ApplicationInsights__InstrumentationKey` | string | App Insights key |
 
@@ -3334,7 +3334,7 @@ Schedule recurring jobs with Quartz.NET.
 
 **Configuration:**
 - Use strongly-typed configuration
-- Store secrets in Vault
+- Store secrets in USP
 - Use environment-specific settings
 - Validate configuration on startup
 

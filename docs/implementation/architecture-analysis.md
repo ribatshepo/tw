@@ -39,7 +39,7 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
 - **5 Core Services**: UCCP, NCCS, USP, UDPS, Stream Compute Service
 - **Multi-Language Architecture**: Go, Rust, .NET 8, Scala, Java, Python (language choice optimized per service)
 - **8,860 Lines of Specifications**: Analyzed across 4 comprehensive specification documents
-- **Production-Grade Infrastructure**: PostgreSQL, Redis, Kafka, MinIO, HashiCorp Vault
+- **Production-Grade Infrastructure**: PostgreSQL, Redis, Kafka, MinIO (USP service provides secrets management)
 
 ### 1.2 Key Architectural Decisions
 
@@ -80,7 +80,7 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
 | **Databases** | PostgreSQL 15+, Redis 7+ |
 | **Message Broker** | Apache Kafka, RabbitMQ |
 | **Object Storage** | MinIO/S3 (ML artifacts, checkpoints, Parquet files) |
-| **Secrets Management** | HashiCorp Vault |
+| **Secrets Management** | USP (Unified Security Platform) |
 | **Observability** | Prometheus, Jaeger, Elasticsearch, Grafana |
 | **Orchestration** | Kubernetes, Docker |
 
@@ -100,7 +100,7 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
 
 ### 1.5 Critical Success Factors
 
-1. **Infrastructure First**: PostgreSQL, Redis, Kafka, Vault must be operational before any service
+1. **Infrastructure First**: PostgreSQL, Redis, Kafka must be operational before any service
 2. **USP as Foundation**: All services depend on USP for authentication and secrets
 3. **UCCP as Backbone**: Service discovery and coordination depends on UCCP stability
 4. **mTLS Non-Negotiable**: Cannot bypass TLS - security is architectural, not optional
@@ -114,7 +114,7 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
 
 | Service | Dependency Level | Technology Stack | Primary Ports | Role |
 |---------|-----------------|------------------|---------------|------|
-| **Infrastructure** | Level 0 | PostgreSQL, Redis, Kafka, MinIO, Vault | Various | Foundation layer |
+| **Infrastructure** | Level 0 | PostgreSQL, Redis, Kafka, MinIO | Various | Foundation layer |
 | **USP** | Level 1 | .NET 8, C# 12 | 8443, 5001, 50005, 9090 | Security foundation |
 | **UCCP** | Level 2 | Go 1.24, Rust, Python 3.11+ | 50000, 8443, 50061, 9100 | Control plane |
 | **UDPS** | Level 3 | Scala 2.13, Java 17 | 50060, 8443, 9090, 8081 | Data platform |
@@ -260,7 +260,7 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
   - IdentityServer4 / OpenIddict
   - Entity Framework Core 8
 - **Security**:
-  - HashiCorp Vault integration
+  - Vault API compatibility (KV v2 engine)
   - HSM support (PKCS#11)
   - WebAuthn/FIDO2
 
@@ -284,8 +284,8 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
    - Policy evaluation engine
    - Dynamic permission assignment
 
-3. **Secrets Management**
-   - Vault-compatible KV engine
+3. **Secrets Management** (Native USP Features)
+   - Vault API compatible KV engine (KV v2)
    - Dynamic secrets generation
    - Secret rotation (automatic)
    - Lease management
@@ -312,12 +312,11 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
    - NIST Cybersecurity Framework
 
 **Database Dependencies**:
-- **PostgreSQL**: User accounts, roles, policies, audit logs
+- **PostgreSQL**: User accounts, roles, policies, audit logs, encrypted secrets (AES-256-GCM)
 - **Redis**: Token cache, session storage
-- **Vault**: Master key storage, encrypted secrets
 
 **Integration Points**:
-- **Upstream**: PostgreSQL, Redis, Vault, HSM
+- **Upstream**: PostgreSQL, Redis, HSM (optional)
 - **Downstream**: All services (authentication, secrets retrieval)
 
 **Key APIs**:
@@ -500,9 +499,8 @@ The **tw (GBMM)** platform is an enterprise-grade distributed system designed to
 | UCCP | PostgreSQL | TLS | Service registry, task metadata | High (blocking) |
 | UCCP | Redis | TLS | Lock state, leader cache | High (blocking) |
 | UCCP | MinIO | HTTPS | ML artifacts, checkpoints | High (blocking) |
-| USP | PostgreSQL | TLS | User accounts, audit logs | High (blocking) |
+| USP | PostgreSQL | TLS | User accounts, audit logs, encrypted secrets | High (blocking) |
 | USP | Redis | TLS | Token cache | Medium (degraded) |
-| USP | Vault | HTTPS | Encrypted secrets | High (blocking) |
 
 **Criticality Levels**:
 - **High (blocking)**: Service cannot function without this dependency
@@ -978,9 +976,8 @@ graph TB
 
 | Target Service | Protocol | Port | Purpose | Data Exchanged | Frequency | SLA |
 |----------------|----------|------|---------|----------------|-----------|-----|
-| PostgreSQL | TLS | 5432 | User accounts, roles, policies, audit logs | SQL queries, user data | High | <50ms |
+| PostgreSQL | TLS | 5432 | User accounts, roles, policies, audit logs, encrypted secrets | SQL queries, user data, secrets storage | High | <50ms |
 | Redis | TLS | 6379 | Token cache, session storage | Cached tokens, sessions | Very High | <5ms |
-| Vault | HTTPS | 8200 | Master key storage, encrypted secrets | Encrypted secrets | Medium | <20ms |
 | HSM (optional) | PKCS#11 | - | Hardware key management | Cryptographic operations | Low | <100ms |
 
 **Inbound Integrations (Other Services → USP):**
@@ -1404,7 +1401,6 @@ graph TB
 **Dependencies:**
 - PostgreSQL (user accounts, roles, audit logs)
 - Redis (token cache, sessions)
-- Vault (encrypted secrets storage)
 - Certificate Authority (mTLS certificates)
 
 **Blocks:** All other services (they depend on USP for authentication)
@@ -1765,14 +1761,7 @@ Before starting service development, validate dependencies:
    - Create buckets: `ml-models`, `ml-artifacts`, `checkpoints`, `training-data`, `data-lake`, `parquet-files`, `flink-checkpoints`
    - Set up lifecycle policies
 
-3. **Vault Setup**
-   - Install HashiCorp Vault
-   - Initialize and unseal Vault
-   - Enable KV secrets engine v2
-   - Configure AppRole auth method
-   - Set up auto-unseal (cloud KMS or Shamir)
-
-4. **RabbitMQ Setup**
+3. **RabbitMQ Setup**
    - Install RabbitMQ 3.12+ (3-node cluster)
    - Enable TLS/SSL
    - Create exchanges: `nccs.direct`, `nccs.fanout`
@@ -1788,13 +1777,14 @@ Before starting service development, validate dependencies:
 **Deliverables:**
 - [ ] Kafka cluster operational, topics created
 - [ ] MinIO cluster operational, buckets created
-- [ ] Vault operational, secrets engines configured
 - [ ] RabbitMQ cluster operational
 - [ ] Prometheus scraping itself
 - [ ] Jaeger accepting traces
 - [ ] Elasticsearch indexing data
 - [ ] Grafana dashboards accessible
-- [ ] Updated `docker-compose.yml` with all infrastructure
+- [ ] Updated `docker-compose.infra.yml` with all infrastructure
+
+**Note**: USP service (secrets management) is deployed separately as an application service.
 
 **Validation Criteria:**
 - Kafka: Can produce/consume messages, SSL/SASL working
@@ -3498,18 +3488,20 @@ conn, err := grpc.Dial("uccp.gbmm.internal:50000", grpc.WithTransportCredentials
 
 ### 9.4 Secrets Management Strategy
 
-**Vault Integration:**
+**USP Secrets Management** (Vault API Compatible):
 ```
-HashiCorp Vault
-    ├── KV Secrets Engine v2 (versioned secrets)
+USP Service (.NET 8)
+    ├── KV Secrets Engine v2 (versioned secrets, Vault API compatible)
     │   ├── secret/uccp/*  (UCCP secrets)
-    │   ├── secret/usp/*   (USP secrets)
+    │   ├── secret/usp/*   (USP own secrets)
     │   ├── secret/udps/*  (UDPS secrets)
     │   ├── secret/stream/* (Stream Compute secrets)
     │   └── secret/nccs/*  (NCCS secrets)
     ├── Database Secrets Engine (dynamic PostgreSQL credentials)
     ├── PKI Secrets Engine (certificate issuance)
     └── Transit Secrets Engine (encryption as a service)
+
+Storage: PostgreSQL (usp_db) with AES-256-GCM encryption
 ```
 
 **Secret Types:**
@@ -3524,7 +3516,7 @@ HashiCorp Vault
 
 **Secret Access Policies:**
 ```hcl
-# Example Vault policy for UCCP service
+# Example USP policy for UCCP service (Vault HCL format for compatibility)
 path "secret/data/uccp/*" {
   capabilities = ["read"]
 }
@@ -3535,9 +3527,9 @@ path "database/creds/uccp-role" {
 ```
 
 **Secret Retrieval (Service Startup):**
-1. Service authenticates to Vault using AppRole (role_id + secret_id)
-2. Vault returns service token (time-limited)
-3. Service retrieves secrets using token
+1. Service authenticates to USP using mTLS certificate (service identity)
+2. USP validates certificate and returns service token (time-limited)
+3. Service retrieves secrets using token via gRPC or HTTPS
 4. Secrets cached in-memory (never persisted to disk)
 5. Token renewed before expiration
 
@@ -3548,11 +3540,11 @@ path "database/creds/uccp-role" {
 **Encryption at Rest:**
 | Data Type | Encryption Method | Key Management |
 |-----------|------------------|----------------|
-| PostgreSQL Data | Transparent Data Encryption (TDE) | Vault Transit engine |
-| Redis Data | RDB/AOF encryption | AES-256-GCM, key in Vault |
-| MinIO Objects | Server-Side Encryption (SSE-KMS) | MinIO KMS integration with Vault |
-| Kafka Topics | Encryption at rest (broker-level) | Key in Vault |
-| Parquet Files | Parquet encryption (column-level) | Vault Transit engine |
+| PostgreSQL Data | Transparent Data Encryption (TDE) | USP Transit engine |
+| Redis Data | RDB/AOF encryption | AES-256-GCM, key in USP |
+| MinIO Objects | Server-Side Encryption (SSE-KMS) | MinIO KMS integration with USP |
+| Kafka Topics | Encryption at rest (broker-level) | Key in USP |
+| Parquet Files | Parquet encryption (column-level) | USP Transit engine |
 
 **Encryption in Transit:**
 - **All Service Communication**: mTLS (TLS 1.3)
@@ -3564,16 +3556,16 @@ path "database/creds/uccp-role" {
 ```
 Client → USP Encrypt API (POST /api/v1/encrypt)
     ↓
-USP → Vault Transit Engine (encrypt operation)
+USP → Transit Engine (internal encryption operation)
     ↓
-Vault → Returns encrypted ciphertext
+USP → Generates/retrieves encryption key from PostgreSQL
     ↓
-USP → Returns ciphertext to client
+USP → Returns encrypted ciphertext to client
 ```
 
 **Key Hierarchy:**
-- **Master Key**: Stored in HSM (optional) or Vault auto-unseal key
-- **Data Encryption Keys (DEKs)**: Generated per dataset, encrypted with Master Key
+- **Master Key**: Stored in HSM (optional) or protected with Shamir's Secret Sharing
+- **Data Encryption Keys (DEKs)**: Generated per dataset, encrypted with Master Key, stored in PostgreSQL
 - **Key Rotation**: Annual rotation for Master Key, on-demand for DEKs
 
 ---
@@ -4385,22 +4377,22 @@ docker-compose -f docker-compose.infra.yml ps
 - RabbitMQ (port 5672, management 15672)
 - Kafka + Zookeeper (port 9092)
 - MinIO (port 9000, console 9001)
-- HashiCorp Vault (port 8200)
 - Prometheus (port 9090)
 - Grafana (port 3000)
 - Jaeger (port 16686)
 
-**Step 3: Initialize Secrets (Vault)**
+**Note**: USP service (secrets management) is deployed as an application service, not infrastructure.
+
+**Step 3: Bootstrap Development Secrets**
 
 ```bash
-# Initialize Vault
-./scripts/init-vault.sh
+# Generate development secrets for local testing
+./scripts/bootstrap-dev-secrets.sh
 
 # This script:
-# 1. Unseals Vault
-# 2. Enables KV secrets engine
-# 3. Creates initial service credentials
-# 4. Stores credentials in secrets/
+# 1. Generates secrets/dev-secrets.json
+# 2. Creates service credentials for local development
+# 3. Provides secrets until USP service is deployed
 ```
 
 **Step 4: Generate Development Certificates**
@@ -4455,8 +4447,8 @@ MINIO_ENDPOINT=localhost:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 
-VAULT_ADDR=http://localhost:8200
-VAULT_TOKEN=dev-root-token
+USP_BASE_URL=https://localhost:8443
+USP_SERVICE_TOKEN=dev-service-token
 
 # Service URLs (for local development)
 UCCP_GRPC_ADDR=localhost:50000
@@ -5005,13 +4997,9 @@ helm install minio bitnami/minio \
   --set mode=distributed \
   --set statefulset.replicaCount=4 \
   --set persistence.size=1Ti
-
-# HashiCorp Vault
-helm install vault hashicorp/vault \
-  --namespace gbmm-infra \
-  --set server.ha.enabled=true \
-  --set server.ha.replicas=3
 ```
+
+**Note**: Secrets management is provided by the USP service (deployed in section 11.6.3 below), not as infrastructure.
 
 **11.6.3 Deploy Services**
 
@@ -5156,7 +5144,7 @@ kubectl logs -n gbmm-services deployment/uccp --tail=100 -f
 Configuration Priority (highest to lowest):
 1. Environment variables
 2. Kubernetes ConfigMaps/Secrets
-3. Vault secrets
+3. USP secrets (via KV API)
 4. config.yaml file
 5. Default values
 ```
@@ -5195,13 +5183,13 @@ database:
   port: 5432
   database: "uccp"
   username: "${POSTGRES_USER}"
-  password: "${POSTGRES_PASSWORD}"  # From Vault
+  password: "${POSTGRES_PASSWORD}"  # From USP
   ssl_mode: "require"
   max_connections: 50
 
 redis:
   address: "${REDIS_HOST}:6379"
-  password: "${REDIS_PASSWORD}"  # From Vault
+  password: "${REDIS_PASSWORD}"  # From USP
   tls_enabled: true
   db: 0
 
@@ -5222,7 +5210,7 @@ observability:
 
 **11.7.3 Secrets Management**
 
-**Vault Secrets Structure:**
+**USP Secrets Structure** (Vault KV v2 API compatible):
 
 ```
 secret/
@@ -5242,6 +5230,8 @@ secret/
     └── usp/encryption-key
 ```
 
+**Note**: Secrets are stored encrypted in PostgreSQL (usp_db), accessed via USP's Vault-compatible API at `/v1/secret/data/{path}`.
+
 **Kubernetes External Secrets:**
 
 ```yaml
@@ -5253,7 +5243,7 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: vault-backend
+    name: usp-backend  # USP implements Vault KV v2 API
     kind: SecretStore
   target:
     name: uccp-secrets
@@ -5286,7 +5276,7 @@ spec:
 
 **Deployment:**
 
-- [ ] Infrastructure deployed (PostgreSQL, Redis, Kafka, MinIO, Vault)
+- [ ] Infrastructure deployed (PostgreSQL, Redis, Kafka, MinIO)
 - [ ] Databases initialized and migrated
 - [ ] TLS certificates provisioned
 - [ ] Services deployed (USP → UCCP → UDPS/Stream → NCCS)
@@ -5874,8 +5864,8 @@ This section provides quick reference materials including port allocations, tech
 | **Zookeeper** | 2181 | TCP | Coordination | No | Kafka only |
 | **MinIO** | 9000 | HTTPS | S3 API | Yes | Services only |
 | **MinIO** | 9001 | HTTPS | Console UI | Yes | Admin only |
-| **HashiCorp Vault** | 8200 | HTTPS | Secrets API | Yes | Services only |
-| **HashiCorp Vault** | 8201 | HTTPS | HA replication | Yes | Vault cluster only |
+
+**Note**: USP service (secrets management) ports are listed in the Services section.
 
 **13.1.3 Observability Ports**
 
@@ -5947,7 +5937,7 @@ This section provides quick reference materials including port allocations, tech
 | **Streaming** | Apache Kafka | 3.6+ | Event streaming |
 | **Coordination** | Zookeeper | 3.9+ | Kafka coordination |
 | **Object Storage** | MinIO | Latest | S3-compatible object storage |
-| **Secrets** | HashiCorp Vault | 1.15+ | Secrets management |
+| **Secrets** | USP Service (built-in) | .NET 8 | Secrets management (Vault API compatible) |
 | **Container Runtime** | Docker | 24.0+ | Containerization |
 | **Orchestration** | Kubernetes | 1.28+ | Container orchestration |
 | **Package Manager** | Helm | 3.12+ | Kubernetes package management |
@@ -5986,7 +5976,7 @@ This section provides quick reference materials including port allocations, tech
 | **Object Storage** | S3 | Blob storage | MinIO, GCS, Azure Blob |
 | **Load Balancer** | ELB/ALB | Load balancing | Nginx, HAProxy |
 | **DNS** | Route 53 | DNS management | Cloudflare, self-hosted BIND |
-| **Secrets** | AWS Secrets Manager | Secrets (backup) | HashiCorp Vault (primary) |
+| **Secrets** | AWS Secrets Manager | Secrets (backup) | USP (primary) |
 | **Monitoring** | CloudWatch | Infrastructure metrics | Prometheus + Grafana |
 | **CDN** | CloudFront | Content delivery | Cloudflare, Fastly |
 
@@ -6057,7 +6047,7 @@ VPC: 10.0.0.0/16 (65,536 IPs)
 - Deny: All other inbound
 
 **Service Subnet → Data Subnet:**
-- Allow: PostgreSQL (5432), Redis (6379), RabbitMQ (5672), Kafka (9092), MinIO (9000), Vault (8200)
+- Allow: PostgreSQL (5432), Redis (6379), RabbitMQ (5672), Kafka (9092), MinIO (9000)
 - Deny: All other
 
 **Service Subnet → Service Subnet:**

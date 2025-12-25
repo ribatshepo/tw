@@ -30,3 +30,85 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Infrastructure - Generated files and secrets
+certs/
+secrets/
+volumes/
+*.log
+
+# Build artifacts
+build/
+dist/
+target/
+out/
+bin/
+obj/
+
+# .NET
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.exe
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/Properties/launchSettings.json
+*.dbmdl
+*.jfm
+**/appsettings.Development.json
+
+# Scala/SBT
+.bsp/
+.metals/
+.scala-build/
+project/target/
+project/project/
+lib_managed/
+src_managed/
+
+# Rust
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Observability
+prometheus_data/
+grafana_data/
+elasticsearch_data/
+jaeger_data/
+
+# Database
+postgres_data/
+redis_data/
+kafka_data/
+minio_data/
+rabbitmq_data/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~

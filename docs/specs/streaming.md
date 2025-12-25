@@ -381,7 +381,7 @@ CREATED → VALIDATING → DEPLOYING → STARTING → RUNNING
 - Certificate-based authentication
 
 **Secret Management:**
-- HashiCorp Vault integration
+- USP (Unified Security Platform) integration
 - Kubernetes Secrets support
 - Environment variable encryption
 - Secret rotation
@@ -556,8 +556,8 @@ CREATED → VALIDATING → DEPLOYING → STARTING → RUNNING
 | `CHECKPOINT_INTERVAL_MS` | int | 60000 | Checkpoint interval |
 | `CHECKPOINT_STORAGE` | string | minio | Storage backend |
 | `MINIO_ENDPOINT` | string | https://minio:9000 | MinIO URL |
-| `MINIO_ACCESS_KEY` | string | (vault) | MinIO credentials |
-| `MINIO_SECRET_KEY` | string | (vault) | MinIO credentials |
+| `MINIO_ACCESS_KEY` | string | (USP) | MinIO credentials |
+| `MINIO_SECRET_KEY` | string | (USP) | MinIO credentials |
 | **SIMD** |
 | `ENABLE_SIMD` | bool | true | Enable SIMD |
 | `SIMD_INSTRUCTION_SET` | string | auto | AVX2, AVX512, or auto-detect |
@@ -567,8 +567,8 @@ CREATED → VALIDATING → DEPLOYING → STARTING → RUNNING
 | `OTEL_ENDPOINT` | string | https://jaeger:4317 | Tracing endpoint |
 | `LOG_LEVEL` | string | INFO | Logging level |
 | **Security** |
-| `VAULT_ADDR` | string | https://vault:8200 | Vault URL |
-| `VAULT_TOKEN` | string | (required) | Vault token |
+| `USP_BASE_URL` | string | https://usp:8443 | USP server URL |
+| `USP_SERVICE_TOKEN` | string | (required) | USP service token |
 | `ENABLE_AUDIT_LOG` | bool | true | Audit logging |
 
 ### Deployment
@@ -937,7 +937,7 @@ graph TB
 - Channel encryption
 
 **Secret Management:**
-- Integration with HashiCorp Vault
+- Integration with USP (Unified Security Platform)
 - Kubernetes Secrets support
 - Secret rotation
 - Encryption at rest
@@ -1075,11 +1075,11 @@ graph TB
 | `TIMESCALEDB_CONNECTION` | string | (required) | TimescaleDB connection |
 | `METRICS_POLLING_INTERVAL_MS` | int | 5000 | Metrics collection interval |
 | `SIGNALR_SCALE_OUT` | string | Redis | Scale-out provider |
-| `REDIS_CONNECTION` | string | (vault) | Redis for SignalR backplane |
-| `VAULT_ADDR` | string | https://vault:8200 | Vault URL |
-| `JWT_SECRET_KEY` | string | (vault) | JWT signing key |
-| `SMTP_HOST` | string | (vault) | Email server |
-| `SLACK_WEBHOOK_URL` | string | (vault) | Slack webhook |
+| `REDIS_CONNECTION` | string | (USP) | Redis for SignalR backplane |
+| `USP_BASE_URL` | string | https://usp:8443 | USP server URL |
+| `JWT_SECRET_KEY` | string | (USP) | JWT signing key |
+| `SMTP_HOST` | string | (USP) | Email server |
+| `SLACK_WEBHOOK_URL` | string | (USP) | Slack webhook |
 
 ### Deployment
 

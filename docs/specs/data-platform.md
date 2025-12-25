@@ -1411,7 +1411,7 @@ graph TB
 | `UDPS_KAFKA_BROKERS` | string | kafka:9092 | Kafka brokers |
 | `UDPS_KAFKA_TOPIC` | string | data-ingest | Ingest topic |
 | `UDPS_IGNITE_NODES` | string | ignite:10800 | Ignite nodes |
-| `UDPS_VAULT_ADDR` | string | https://vault:8443 | Vault address |
+| `UDPS_USP_BASE_URL` | string | https://usp:8443 | USP server URL |
 | `UDPS_ENABLE_TLS` | bool | true | Enable TLS |
 | `UDPS_TLS_CERT_PATH` | string | /etc/ssl/certs | TLS cert path |
 | `UDPS_TLS_KEY_PATH` | string | /etc/ssl/private | TLS key path |
@@ -1803,7 +1803,7 @@ graph TB
 - Environment variables
 - Azure App Configuration
 - AWS Systems Manager Parameter Store
-- HashiCorp Vault
+- USP (Unified Security Platform)
 
 **Configuration Options:**
 - Service endpoints
@@ -2011,7 +2011,7 @@ graph TB
 
 - Integration with Azure Key Vault
 - Integration with AWS Secrets Manager
-- Integration with HashiCorp Vault
+- Integration with USP (Unified Security Platform)
 - Encrypted configuration
 
 ---
