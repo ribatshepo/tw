@@ -106,6 +106,7 @@ services:
       ZOOKEEPER_TICK_TIME: ${ZOOKEEPER_TICK_TIME:-2000}
       ZOOKEEPER_SYNC_LIMIT: 5
       ZOOKEEPER_INIT_LIMIT: 10
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=*"
     ports:
       - "${ZOOKEEPER_PORT:-2181}:2181"
     volumes:

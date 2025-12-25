@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'gbmm-dev'
+    environment: 'development'
+
+# Alertmanager configuration (optional for dev)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['localhost:9093']
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Infrastructure services
+  - job_name: 'infrastructure'
+    static_configs:
+      - targets:
+        - 'postgres:9187'      # PostgreSQL exporter (if enabled)
+        - 'redis:9121'          # Redis exporter (if enabled)
+        - 'rabbitmq:15692'      # RabbitMQ Prometheus plugin
+
+  # Application services (when implemented)
+  - job_name: 'uccp'
+    static_configs:
+      - targets: ['uccp:9100']
+
+  - job_name: 'nccs'
+    static_configs:
+      - targets: ['nccs:9200']
+
+  - job_name: 'usp'
+    static_configs:
+      - targets: ['usp:9090']
+
+  - job_name: 'udps'
+    static_configs:
+      - targets: ['udps:9090']
+
+  - job_name: 'stream-compute'
+    static_configs:
+      - targets: ['stream-compute:9096']

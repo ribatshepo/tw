@@ -17,6 +17,7 @@ CYAN := \033[36m
 
 # Project configuration
 PROJECT_NAME := gbmm-platform
+DOCKER_COMPOSE := docker compose
 DOCKER_COMPOSE_INFRA := docker-compose.infra.yml
 DOCKER_COMPOSE_SERVICES := docker-compose.yml
 
@@ -62,7 +63,7 @@ help: ## Show this help message
 
 infra-up: ## Start all infrastructure services
 	@echo "$(BOLD)$(CYAN)Starting infrastructure services...$(RESET)"
-	docker-compose -f $(DOCKER_COMPOSE_INFRA) up -d
+	$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_INFRA) up -d
 	@echo "$(GREEN)✓ Infrastructure services started$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Waiting for services to become healthy...$(RESET)"
@@ -70,17 +71,17 @@ infra-up: ## Start all infrastructure services
 
 infra-down: ## Stop all infrastructure services
 	@echo "$(BOLD)$(CYAN)Stopping infrastructure services...$(RESET)"
-	docker-compose -f $(DOCKER_COMPOSE_INFRA) down
+	$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_INFRA) down
 	@echo "$(GREEN)✓ Infrastructure services stopped$(RESET)"
 
 infra-restart: infra-down infra-up ## Restart all infrastructure services
 
 infra-logs: ## Show logs from infrastructure services
-	docker-compose -f $(DOCKER_COMPOSE_INFRA) logs -f
+	$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_INFRA) logs -f
 
 infra-ps: ## Show status of infrastructure services
 	@echo "$(BOLD)$(CYAN)Infrastructure Services Status:$(RESET)"
-	@docker-compose -f $(DOCKER_COMPOSE_INFRA) ps
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_INFRA) ps
 
 # ================================================================================================
 # SETUP TARGETS
@@ -219,9 +220,9 @@ clean: clean-containers clean-volumes ## Clean up containers and volumes (prompt
 
 clean-containers: ## Stop and remove all containers
 	@echo "$(BOLD)$(YELLOW)Stopping and removing containers...$(RESET)"
-	docker-compose -f $(DOCKER_COMPOSE_INFRA) down
+	$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_INFRA) down
 	@if [ -f "$(DOCKER_COMPOSE_SERVICES)" ]; then \
-		docker-compose -f $(DOCKER_COMPOSE_SERVICES) down; \
+		$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_SERVICES) down; \
 	fi
 	@echo "$(GREEN)✓ Containers removed$(RESET)"
 
@@ -230,7 +231,7 @@ clean-volumes: ## Remove all volumes (prompts for confirmation)
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker-compose -f $(DOCKER_COMPOSE_INFRA) down -v; \
+		$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_INFRA) down -v; \
 		echo "$(GREEN)✓ Volumes removed$(RESET)"; \
 	else \
 		echo "$(CYAN)Cancelled$(RESET)"; \

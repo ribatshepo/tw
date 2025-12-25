@@ -65,14 +65,15 @@ run_test() {
 
     if $test_function >/dev/null 2>&1; then
         log_progress_done
-        ((TESTS_PASSED++))
-        return 0
+        ((TESTS_PASSED++)) || true
     else
         log_progress_fail
-        ((TESTS_FAILED++))
+        ((TESTS_FAILED++)) || true
         FAILED_TESTS+=("$test_name")
-        return 1
     fi
+
+    # Always return 0 to prevent set -e from exiting
+    return 0
 }
 
 # Check if container is running
