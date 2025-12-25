@@ -197,6 +197,7 @@ try
     builder.Services.AddScoped<ISafeManagementService, SafeManagementService>();
     builder.Services.AddScoped<ICheckoutService, CheckoutService>();
     builder.Services.AddScoped<IDualControlService, DualControlService>();
+    builder.Services.AddScoped<IPasswordRotationService, PasswordRotationService>();
 
     // Advanced Authentication Services
     builder.Services.AddScoped<IWebAuthnService, WebAuthnService>();
