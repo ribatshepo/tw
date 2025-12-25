@@ -199,6 +199,8 @@ try
     builder.Services.AddScoped<IDualControlService, DualControlService>();
     builder.Services.AddScoped<IPasswordRotationService, PasswordRotationService>();
     builder.Services.AddScoped<ISessionRecordingService, SessionRecordingService>();
+    builder.Services.AddScoped<IJitAccessService, JitAccessService>();
+    builder.Services.AddScoped<IBreakGlassService, BreakGlassService>();
 
     // Advanced Authentication Services
     builder.Services.AddScoped<IWebAuthnService, WebAuthnService>();

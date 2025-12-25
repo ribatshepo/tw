@@ -51,6 +51,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<AccessApproval> AccessApprovals { get; set; }
     public DbSet<PrivilegedSession> PrivilegedSessions { get; set; }
     public DbSet<SessionCommand> SessionCommands { get; set; }
+    public DbSet<JitAccess> JitAccesses { get; set; }
+    public DbSet<JitAccessTemplate> JitAccessTemplates { get; set; }
+    public DbSet<BreakGlassAccess> BreakGlassAccesses { get; set; }
+    public DbSet<BreakGlassPolicy> BreakGlassPolicies { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -552,6 +556,184 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.HasIndex(sc => sc.ExecutedAt).HasDatabaseName("idx_session_commands_executed_at");
             entity.HasIndex(sc => sc.IsSuspicious).HasDatabaseName("idx_session_commands_suspicious");
             entity.HasIndex(sc => sc.SequenceNumber).HasDatabaseName("idx_session_commands_sequence");
+        });
+
+        // Configure JitAccess
+        builder.Entity<JitAccess>(entity =>
+        {
+            entity.ToTable("jit_accesses");
+            entity.HasKey(j => j.Id);
+
+            entity.Property(j => j.Id).HasColumnName("id");
+            entity.Property(j => j.UserId).HasColumnName("user_id");
+            entity.Property(j => j.ResourceType).HasColumnName("resource_type").HasMaxLength(100);
+            entity.Property(j => j.ResourceId).HasColumnName("resource_id");
+            entity.Property(j => j.ResourceName).HasColumnName("resource_name").HasMaxLength(500);
+            entity.Property(j => j.AccessLevel).HasColumnName("access_level").HasMaxLength(50);
+            entity.Property(j => j.Justification).HasColumnName("justification");
+            entity.Property(j => j.TemplateId).HasColumnName("template_id");
+            entity.Property(j => j.ApprovalId).HasColumnName("approval_id");
+            entity.Property(j => j.RequestedAt).HasColumnName("requested_at");
+            entity.Property(j => j.GrantedAt).HasColumnName("granted_at");
+            entity.Property(j => j.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(j => j.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(j => j.RevokedBy).HasColumnName("revoked_by");
+            entity.Property(j => j.RevocationReason).HasColumnName("revocation_reason");
+            entity.Property(j => j.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(j => j.DurationMinutes).HasColumnName("duration_minutes");
+            entity.Property(j => j.AutoProvisioningCompleted).HasColumnName("auto_provisioning_completed");
+            entity.Property(j => j.AutoDeprovisioningCompleted).HasColumnName("auto_deprovisioning_completed");
+            entity.Property(j => j.ProvisioningDetails).HasColumnName("provisioning_details");
+            entity.Property(j => j.DeprovisioningDetails).HasColumnName("deprovisioning_details");
+            entity.Property(j => j.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(j => j.UserAgent).HasColumnName("user_agent");
+            entity.Property(j => j.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+
+            entity.HasOne(j => j.User)
+                .WithMany()
+                .HasForeignKey(j => j.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(j => j.Template)
+                .WithMany(t => t.AccessGrants)
+                .HasForeignKey(j => j.TemplateId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(j => j.Approval)
+                .WithMany()
+                .HasForeignKey(j => j.ApprovalId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(j => j.RevokedByUser)
+                .WithMany()
+                .HasForeignKey(j => j.RevokedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(j => j.UserId).HasDatabaseName("idx_jit_accesses_user_id");
+            entity.HasIndex(j => j.ResourceType).HasDatabaseName("idx_jit_accesses_resource_type");
+            entity.HasIndex(j => j.ResourceId).HasDatabaseName("idx_jit_accesses_resource_id");
+            entity.HasIndex(j => j.Status).HasDatabaseName("idx_jit_accesses_status");
+            entity.HasIndex(j => j.RequestedAt).HasDatabaseName("idx_jit_accesses_requested_at");
+            entity.HasIndex(j => j.ExpiresAt).HasDatabaseName("idx_jit_accesses_expires_at");
+        });
+
+        // Configure JitAccessTemplate
+        builder.Entity<JitAccessTemplate>(entity =>
+        {
+            entity.ToTable("jit_access_templates");
+            entity.HasKey(t => t.Id);
+
+            entity.Property(t => t.Id).HasColumnName("id");
+            entity.Property(t => t.Name).HasColumnName("name").HasMaxLength(255);
+            entity.Property(t => t.Description).HasColumnName("description");
+            entity.Property(t => t.ResourceType).HasColumnName("resource_type").HasMaxLength(100);
+            entity.Property(t => t.ResourceId).HasColumnName("resource_id");
+            entity.Property(t => t.AccessLevel).HasColumnName("access_level").HasMaxLength(50);
+            entity.Property(t => t.DefaultDurationMinutes).HasColumnName("default_duration_minutes");
+            entity.Property(t => t.MaxDurationMinutes).HasColumnName("max_duration_minutes");
+            entity.Property(t => t.MinDurationMinutes).HasColumnName("min_duration_minutes");
+            entity.Property(t => t.RequiresApproval).HasColumnName("requires_approval");
+            entity.Property(t => t.ApprovalPolicy).HasColumnName("approval_policy").HasMaxLength(50);
+            entity.Property(t => t.Approvers).HasColumnName("approvers").HasColumnType("jsonb");
+            entity.Property(t => t.RequiresJustification).HasColumnName("requires_justification");
+            entity.Property(t => t.AllowedRoles).HasColumnName("allowed_roles").HasColumnType("jsonb");
+            entity.Property(t => t.Active).HasColumnName("active");
+            entity.Property(t => t.UsageCount).HasColumnName("usage_count");
+            entity.Property(t => t.LastUsed).HasColumnName("last_used");
+            entity.Property(t => t.CreatedAt).HasColumnName("created_at");
+            entity.Property(t => t.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(t => t.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+
+            entity.HasIndex(t => t.Name).HasDatabaseName("idx_jit_access_templates_name");
+            entity.HasIndex(t => t.ResourceType).HasDatabaseName("idx_jit_access_templates_resource_type");
+            entity.HasIndex(t => t.Active).HasDatabaseName("idx_jit_access_templates_active");
+        });
+
+        // Configure BreakGlassAccess
+        builder.Entity<BreakGlassAccess>(entity =>
+        {
+            entity.ToTable("break_glass_accesses");
+            entity.HasKey(bg => bg.Id);
+
+            entity.Property(bg => bg.Id).HasColumnName("id");
+            entity.Property(bg => bg.UserId).HasColumnName("user_id");
+            entity.Property(bg => bg.Reason).HasColumnName("reason");
+            entity.Property(bg => bg.IncidentType).HasColumnName("incident_type").HasMaxLength(100);
+            entity.Property(bg => bg.Severity).HasColumnName("severity").HasMaxLength(50);
+            entity.Property(bg => bg.ActivatedAt).HasColumnName("activated_at");
+            entity.Property(bg => bg.DeactivatedAt).HasColumnName("deactivated_at");
+            entity.Property(bg => bg.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(bg => bg.Status).HasColumnName("status").HasMaxLength(50);
+            entity.Property(bg => bg.DurationMinutes).HasColumnName("duration_minutes");
+            entity.Property(bg => bg.SessionRecordingMandatory).HasColumnName("session_recording_mandatory");
+            entity.Property(bg => bg.SessionId).HasColumnName("session_id");
+            entity.Property(bg => bg.AccessedResources).HasColumnName("accessed_resources");
+            entity.Property(bg => bg.ActionsPerformed).HasColumnName("actions_performed");
+            entity.Property(bg => bg.ExecutiveNotified).HasColumnName("executive_notified");
+            entity.Property(bg => bg.ExecutiveNotifiedAt).HasColumnName("executive_notified_at");
+            entity.Property(bg => bg.NotifiedExecutives).HasColumnName("notified_executives");
+            entity.Property(bg => bg.RequiresReview).HasColumnName("requires_review");
+            entity.Property(bg => bg.ReviewedBy).HasColumnName("reviewed_by");
+            entity.Property(bg => bg.ReviewedAt).HasColumnName("reviewed_at");
+            entity.Property(bg => bg.ReviewNotes).HasColumnName("review_notes");
+            entity.Property(bg => bg.ReviewDecision).HasColumnName("review_decision").HasMaxLength(100);
+            entity.Property(bg => bg.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(bg => bg.UserAgent).HasColumnName("user_agent");
+            entity.Property(bg => bg.Location).HasColumnName("location").HasMaxLength(500);
+            entity.Property(bg => bg.DeviceFingerprint).HasColumnName("device_fingerprint").HasMaxLength(500);
+            entity.Property(bg => bg.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+
+            entity.HasOne(bg => bg.User)
+                .WithMany()
+                .HasForeignKey(bg => bg.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(bg => bg.Reviewer)
+                .WithMany()
+                .HasForeignKey(bg => bg.ReviewedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(bg => bg.Session)
+                .WithMany()
+                .HasForeignKey(bg => bg.SessionId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasIndex(bg => bg.UserId).HasDatabaseName("idx_break_glass_accesses_user_id");
+            entity.HasIndex(bg => bg.Status).HasDatabaseName("idx_break_glass_accesses_status");
+            entity.HasIndex(bg => bg.IncidentType).HasDatabaseName("idx_break_glass_accesses_incident_type");
+            entity.HasIndex(bg => bg.ActivatedAt).HasDatabaseName("idx_break_glass_accesses_activated_at");
+            entity.HasIndex(bg => bg.ExpiresAt).HasDatabaseName("idx_break_glass_accesses_expires_at");
+            entity.HasIndex(bg => bg.RequiresReview).HasDatabaseName("idx_break_glass_accesses_requires_review");
+        });
+
+        // Configure BreakGlassPolicy
+        builder.Entity<BreakGlassPolicy>(entity =>
+        {
+            entity.ToTable("break_glass_policies");
+            entity.HasKey(bp => bp.Id);
+
+            entity.Property(bp => bp.Id).HasColumnName("id");
+            entity.Property(bp => bp.Name).HasColumnName("name").HasMaxLength(255);
+            entity.Property(bp => bp.Description).HasColumnName("description");
+            entity.Property(bp => bp.Enabled).HasColumnName("enabled");
+            entity.Property(bp => bp.DefaultDurationMinutes).HasColumnName("default_duration_minutes");
+            entity.Property(bp => bp.MaxDurationMinutes).HasColumnName("max_duration_minutes");
+            entity.Property(bp => bp.RequireJustification).HasColumnName("require_justification");
+            entity.Property(bp => bp.MinJustificationLength).HasColumnName("min_justification_length");
+            entity.Property(bp => bp.AutoNotifyExecutives).HasColumnName("auto_notify_executives");
+            entity.Property(bp => bp.ExecutiveUserIds).HasColumnName("executive_user_ids");
+            entity.Property(bp => bp.MandatorySessionRecording).HasColumnName("mandatory_session_recording");
+            entity.Property(bp => bp.RequirePostAccessReview).HasColumnName("require_post_access_review");
+            entity.Property(bp => bp.ReviewRequiredWithinHours).HasColumnName("review_required_within_hours");
+            entity.Property(bp => bp.AllowedIncidentTypes).HasColumnName("allowed_incident_types");
+            entity.Property(bp => bp.RestrictedToRoles).HasColumnName("restricted_to_roles");
+            entity.Property(bp => bp.NotificationChannels).HasColumnName("notification_channels");
+            entity.Property(bp => bp.CreatedAt).HasColumnName("created_at");
+            entity.Property(bp => bp.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(bp => bp.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
+
+            entity.HasIndex(bp => bp.Name).HasDatabaseName("idx_break_glass_policies_name");
+            entity.HasIndex(bp => bp.Enabled).HasDatabaseName("idx_break_glass_policies_enabled");
         });
 
         // Ignore Identity tables we don't need
