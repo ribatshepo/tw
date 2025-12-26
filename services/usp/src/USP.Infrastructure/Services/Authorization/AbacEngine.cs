@@ -466,17 +466,18 @@ public class AbacEngine : IAbacEngine
                         var owner = secret.CreatedBy.ToString();
                         var tags = new List<string>();
 
-                        if (secret.Metadata != null)
+                        if (!string.IsNullOrEmpty(secret.Metadata))
                         {
                             try
                             {
-                                if (secret.Metadata.RootElement.TryGetProperty("classification", out var classValue))
+                                using var metadataDoc = JsonDocument.Parse(secret.Metadata);
+                                if (metadataDoc.RootElement.TryGetProperty("classification", out var classValue))
                                     classification = classValue.GetString() ?? "internal";
-                                if (secret.Metadata.RootElement.TryGetProperty("sensitivity", out var sensValue))
+                                if (metadataDoc.RootElement.TryGetProperty("sensitivity", out var sensValue))
                                     sensitivityLevel = sensValue.GetString() ?? "medium";
-                                if (secret.Metadata.RootElement.TryGetProperty("owner", out var ownerValue))
+                                if (metadataDoc.RootElement.TryGetProperty("owner", out var ownerValue))
                                     owner = ownerValue.GetString() ?? owner;
-                                if (secret.Metadata.RootElement.TryGetProperty("tags", out var tagsValue) && tagsValue.ValueKind == JsonValueKind.Array)
+                                if (metadataDoc.RootElement.TryGetProperty("tags", out var tagsValue) && tagsValue.ValueKind == JsonValueKind.Array)
                                 {
                                     tags = tagsValue.EnumerateArray().Select(t => t.GetString() ?? "").Where(t => !string.IsNullOrEmpty(t)).ToList();
                                 }

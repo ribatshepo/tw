@@ -81,6 +81,21 @@ public class BiometricTemplate
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// PIN hash for hybrid biometric/PIN authentication (BCrypt)
+    /// </summary>
+    public string? PinHash { get; set; }
+
+    /// <summary>
+    /// PIN salt for hybrid authentication
+    /// </summary>
+    public string? PinSalt { get; set; }
+
+    /// <summary>
+    /// Liveness detection score (0-100, higher is better)
+    /// </summary>
+    public int? LivenessScore { get; set; }
+
+    /// <summary>
     /// Navigation property
     /// </summary>
     public virtual ApplicationUser User { get; set; } = null!;

@@ -81,7 +81,7 @@ public class DatabaseEngine : IDatabaseEngine
         var encryptedPassword = request.Password != null ? _encryptionService.Encrypt(request.Password) : null;
 
         var additionalConfigJson = request.AdditionalConfig != null
-            ? JsonDocument.Parse(JsonSerializer.Serialize(request.AdditionalConfig))
+            ? JsonSerializer.Serialize(request.AdditionalConfig)
             : null;
 
         if (existingConfig != null)

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
+using USP.Core.Models.Entities;
 using USP.Core.Services.Communication;
 using USP.Infrastructure.Data;
 using USP.Infrastructure.Services.Mfa;

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using USP.Infrastructure.Data;
@@ -13,9 +14,11 @@ using USP.Infrastructure.Data;
 namespace USP.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251226100302_AddPushNotificationFieldsToMfaDevice")]
+    partial class AddPushNotificationFieldsToMfaDevice
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -302,74 +305,6 @@ namespace USP.Infrastructure.Migrations
                         .HasDatabaseName("idx_account_checkouts_user_id");
 
                     b.ToTable("account_checkouts", (string)null);
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.AdaptiveAuthPolicy", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CreatorId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("MaxRiskScore")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<int>("MinRiskScore")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Priority")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RequiredFactorCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("RequiredFactors")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ResourcePatterns")
-                        .HasColumnType("text");
-
-                    b.Property<int>("StepUpValidityMinutes")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TriggerConditions")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatorId");
-
-                    b.ToTable("AdaptiveAuthPolicies");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.ApiKey", b =>
@@ -697,76 +632,6 @@ namespace USP.Infrastructure.Migrations
                         .HasDatabaseName("idx_audit_logs_user_id");
 
                     b.ToTable("audit_logs", (string)null);
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.AuthenticationEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("DeviceFingerprint")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("EventTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("FactorsUsed")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("FailureReason")
-                        .HasColumnType("text");
-
-                    b.Property<string>("IpAddress")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsTrustedDevice")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Location")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("PolicyAction")
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("PolicyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ResourcePath")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RiskLevel")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("RiskScore")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("UserAgent")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PolicyId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("AuthenticationEvents");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.AuthorizationFlow", b =>
@@ -1338,19 +1203,9 @@ namespace USP.Infrastructure.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("control_name");
 
-                    b.Property<string>("ControlType")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
                     b.Property<string>("Evidence")
                         .HasColumnType("text")
                         .HasColumnName("evidence");
-
-                    b.Property<string>("FrameworkName")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("Gaps")
                         .HasColumnType("text")
@@ -1360,18 +1215,11 @@ namespace USP.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("implementation");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTime?>("LastAssessed")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_assessed");
 
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("ReportId")
+                    b.Property<Guid>("ReportId")
                         .HasColumnType("uuid")
                         .HasColumnName("report_id");
 
@@ -1395,149 +1243,6 @@ namespace USP.Infrastructure.Migrations
                         .HasDatabaseName("idx_compliance_controls_status");
 
                     b.ToTable("compliance_controls", (string)null);
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceControlVerification", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ControlId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("DurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Evidence")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Findings")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Issues")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("NextVerificationDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Recommendations")
-                        .HasColumnType("text");
-
-                    b.Property<int>("Score")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("VerificationFrequency")
-                        .HasColumnType("text");
-
-                    b.Property<string>("VerificationMethod")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("VerifiedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("VerifiedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("VerifierId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ControlId");
-
-                    b.HasIndex("VerifierId");
-
-                    b.ToTable("ComplianceControlVerifications");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceRemediationTask", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AssignedTo")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AssignedUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CompletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CompletedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CompletionNotes")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ControlId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DueDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EstimatedEffort")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ImpactLevel")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("RemediationAction")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Tags")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("VerificationId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedUserId");
-
-                    b.HasIndex("CompletedByUserId");
-
-                    b.HasIndex("ControlId");
-
-                    b.HasIndex("VerificationId");
-
-                    b.ToTable("ComplianceRemediationTasks");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.ComplianceReport", b =>
@@ -1635,56 +1340,6 @@ namespace USP.Infrastructure.Migrations
                         .HasDatabaseName("idx_compliance_reports_status");
 
                     b.ToTable("compliance_reports", (string)null);
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceVerificationSchedule", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AutoRemediationSettings")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ControlId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CronExpression")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Frequency")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("LastRunAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("LastRunDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LastRunStatus")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("NextRunAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("NotificationSettings")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ControlId");
-
-                    b.ToTable("ComplianceVerificationSchedules");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.ContextPolicy", b =>
@@ -2436,104 +2091,6 @@ namespace USP.Infrastructure.Migrations
                         .HasDatabaseName("idx_ldap_configs_name");
 
                     b.ToTable("ldap_configurations", (string)null);
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.Lease", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("AutoRenewalEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("IssuedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("LastRenewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("LeaseDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("MaxRenewals")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<int>("RenewalCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("RevocationReason")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("RevokedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SecretId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SecretId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("Leases");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.LeaseRenewalHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ErrorMessage")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsAutoRenewal")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("LeaseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("NewExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("PreviousExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("RenewalCount")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("RenewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("RenewedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("Success")
-                        .HasColumnType("boolean");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LeaseId");
-
-                    b.ToTable("LeaseRenewalHistories");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.MagicLink", b =>
@@ -3333,15 +2890,9 @@ namespace USP.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<int?>("Duration")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("end_time");
-
-                    b.Property<int?>("FrameRate")
-                        .HasColumnType("integer");
 
                     b.Property<string>("HostAddress")
                         .HasMaxLength(500)
@@ -3378,10 +2929,6 @@ namespace USP.Infrastructure.Migrations
                     b.Property<int>("QueryCount")
                         .HasColumnType("integer")
                         .HasColumnName("query_count");
-
-                    b.Property<string>("RecordingFormat")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<string>("RecordingPath")
                         .HasMaxLength(1000)
@@ -3426,9 +2973,6 @@ namespace USP.Infrastructure.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
-
-                    b.Property<string>("VideoCodec")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -3960,54 +3504,6 @@ namespace USP.Infrastructure.Migrations
                         .HasDatabaseName("idx_session_commands_session_id");
 
                     b.ToTable("session_commands", (string)null);
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.StepUpSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CompletedFactors")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("InitiatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("IpAddress")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsCompleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsValid")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ResourcePath")
-                        .HasColumnType("text");
-
-                    b.Property<string>("SessionToken")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("StepUpSessions");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.TransitKey", b =>
@@ -5158,15 +4654,6 @@ namespace USP.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("USP.Core.Models.Entities.AdaptiveAuthPolicy", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatorId");
-
-                    b.Navigation("Creator");
-                });
-
             modelBuilder.Entity("USP.Core.Models.Entities.ApiKey", b =>
                 {
                     b.HasOne("USP.Core.Models.Entities.ApplicationUser", "User")
@@ -5184,23 +4671,6 @@ namespace USP.Infrastructure.Migrations
                         .WithMany("AuditLogs")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.AuthenticationEvent", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.AdaptiveAuthPolicy", "Policy")
-                        .WithMany("AuthenticationEvents")
-                        .HasForeignKey("PolicyId");
-
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Policy");
 
                     b.Navigation("User");
                 });
@@ -5269,57 +4739,12 @@ namespace USP.Infrastructure.Migrations
                     b.HasOne("USP.Core.Models.Entities.ComplianceReport", "Report")
                         .WithMany("Controls")
                         .HasForeignKey("ReportId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("AssessedByUser");
 
                     b.Navigation("Report");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceControlVerification", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.ComplianceControl", "Control")
-                        .WithMany()
-                        .HasForeignKey("ControlId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "Verifier")
-                        .WithMany()
-                        .HasForeignKey("VerifierId");
-
-                    b.Navigation("Control");
-
-                    b.Navigation("Verifier");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceRemediationTask", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "AssignedUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedUserId");
-
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "CompletedByUser")
-                        .WithMany()
-                        .HasForeignKey("CompletedByUserId");
-
-                    b.HasOne("USP.Core.Models.Entities.ComplianceControl", "Control")
-                        .WithMany()
-                        .HasForeignKey("ControlId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("USP.Core.Models.Entities.ComplianceControlVerification", "Verification")
-                        .WithMany("RemediationTasks")
-                        .HasForeignKey("VerificationId");
-
-                    b.Navigation("AssignedUser");
-
-                    b.Navigation("CompletedByUser");
-
-                    b.Navigation("Control");
-
-                    b.Navigation("Verification");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.ComplianceReport", b =>
@@ -5331,17 +4756,6 @@ namespace USP.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("GeneratedByUser");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceVerificationSchedule", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.ComplianceControl", "Control")
-                        .WithMany()
-                        .HasForeignKey("ControlId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Control");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.DatabaseLease", b =>
@@ -5434,36 +4848,6 @@ namespace USP.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Creator");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.Lease", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.Secret", "Secret")
-                        .WithMany()
-                        .HasForeignKey("SecretId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Secret");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.LeaseRenewalHistory", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.Lease", "Lease")
-                        .WithMany("RenewalHistory")
-                        .HasForeignKey("LeaseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Lease");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.MagicLink", b =>
@@ -5703,17 +5087,6 @@ namespace USP.Infrastructure.Migrations
                     b.Navigation("Session");
                 });
 
-            modelBuilder.Entity("USP.Core.Models.Entities.StepUpSession", b =>
-                {
-                    b.HasOne("USP.Core.Models.Entities.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("USP.Core.Models.Entities.TransitKey", b =>
                 {
                     b.HasOne("USP.Core.Models.Entities.ApplicationUser", "Creator")
@@ -5922,11 +5295,6 @@ namespace USP.Infrastructure.Migrations
                     b.Navigation("Checkouts");
                 });
 
-            modelBuilder.Entity("USP.Core.Models.Entities.AdaptiveAuthPolicy", b =>
-                {
-                    b.Navigation("AuthenticationEvents");
-                });
-
             modelBuilder.Entity("USP.Core.Models.Entities.ApplicationUser", b =>
                 {
                     b.Navigation("ApiKeys");
@@ -5958,11 +5326,6 @@ namespace USP.Infrastructure.Migrations
                     b.Navigation("Approvals");
                 });
 
-            modelBuilder.Entity("USP.Core.Models.Entities.ComplianceControlVerification", b =>
-                {
-                    b.Navigation("RemediationTasks");
-                });
-
             modelBuilder.Entity("USP.Core.Models.Entities.ComplianceReport", b =>
                 {
                     b.Navigation("Controls");
@@ -5983,11 +5346,6 @@ namespace USP.Infrastructure.Migrations
             modelBuilder.Entity("USP.Core.Models.Entities.JitAccessTemplate", b =>
                 {
                     b.Navigation("AccessGrants");
-                });
-
-            modelBuilder.Entity("USP.Core.Models.Entities.Lease", b =>
-                {
-                    b.Navigation("RenewalHistory");
                 });
 
             modelBuilder.Entity("USP.Core.Models.Entities.OAuth2Client", b =>

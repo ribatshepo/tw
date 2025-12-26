@@ -15,14 +15,17 @@ namespace USP.Api.Controllers.Compliance;
 public class ComplianceController : ControllerBase
 {
     private readonly IComplianceEngine _complianceEngine;
+    private readonly IComplianceAutomationService? _automationService;
     private readonly ILogger<ComplianceController> _logger;
 
     public ComplianceController(
         IComplianceEngine complianceEngine,
-        ILogger<ComplianceController> logger)
+        ILogger<ComplianceController> logger,
+        IComplianceAutomationService? automationService = null)
     {
         _complianceEngine = complianceEngine;
         _logger = logger;
+        _automationService = automationService;
     }
 
     /// <summary>
@@ -302,6 +305,288 @@ public class ComplianceController : ControllerBase
         }
     }
 
+    // ============================================================================
+    // Automated Compliance Verification Endpoints
+    // ============================================================================
+
+    /// <summary>
+    /// Verify a specific compliance control (automated)
+    /// </summary>
+    [HttpPost("automation/verify")]
+    [ProducesResponseType(typeof(ControlVerificationResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> VerifyControl([FromBody] VerifyControlRequestDto request)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            var userId = GetUserId();
+            var result = await _automationService.VerifyControlAsync(request.ControlId, userId);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Verify all controls for a specific framework (automated)
+    /// </summary>
+    [HttpPost("automation/frameworks/{frameworkName}/verify")]
+    [Authorize(Roles = "admin")]
+    [ProducesResponseType(typeof(List<ControlVerificationResultDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> VerifyFramework(string frameworkName)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var userId = GetUserId();
+        var results = await _automationService.VerifyFrameworkAsync(frameworkName, userId);
+        return Ok(results);
+    }
+
+    /// <summary>
+    /// Collect evidence for a control
+    /// </summary>
+    [HttpGet("automation/controls/{controlId:guid}/evidence")]
+    [ProducesResponseType(typeof(ControlEvidenceDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CollectEvidence(Guid controlId)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        try
+        {
+            var evidence = await _automationService.CollectEvidenceAsync(controlId);
+            return Ok(evidence);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Generate automated compliance report
+    /// </summary>
+    [HttpPost("automation/reports/generate")]
+    [Authorize(Roles = "admin")]
+    [ProducesResponseType(typeof(AutomatedComplianceReportDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GenerateAutomatedReport([FromBody] GenerateReportRequestDto request)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var report = await _automationService.GenerateAutomatedReportAsync(
+            request.FrameworkName,
+            request.StartDate,
+            request.EndDate,
+            request.Format);
+
+        return Ok(report);
+    }
+
+    /// <summary>
+    /// Run continuous compliance check for all frameworks
+    /// </summary>
+    [HttpPost("automation/run-checks")]
+    [Authorize(Roles = "admin")]
+    [ProducesResponseType(typeof(ComplianceCheckSummaryDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RunContinuousCheck()
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var summary = await _automationService.RunContinuousComplianceCheckAsync();
+        return Ok(summary);
+    }
+
+    /// <summary>
+    /// Create remediation task for a compliance issue
+    /// </summary>
+    [HttpPost("automation/remediation-tasks")]
+    [ProducesResponseType(typeof(RemediationTaskDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CreateRemediationTask([FromBody] CreateRemediationTaskDto request)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            var task = await _automationService.CreateRemediationTaskAsync(request);
+            return CreatedAtAction(
+                nameof(GetRemediationTasks),
+                new { controlId = task.ControlId },
+                task);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Update remediation task status
+    /// </summary>
+    [HttpPatch("automation/remediation-tasks/{taskId:guid}")]
+    [ProducesResponseType(typeof(RemediationTaskDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateRemediationTaskStatus(
+        Guid taskId,
+        [FromBody] UpdateRemediationTaskStatusDto request)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        try
+        {
+            var userId = GetUserId();
+            var task = await _automationService.UpdateRemediationTaskStatusAsync(
+                taskId,
+                request.Status,
+                userId,
+                request.Notes);
+            return Ok(task);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get remediation tasks for a control
+    /// </summary>
+    [HttpGet("automation/controls/{controlId:guid}/remediation-tasks")]
+    [ProducesResponseType(typeof(List<RemediationTaskDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRemediationTasks(Guid controlId, [FromQuery] string? status = null)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var tasks = await _automationService.GetRemediationTasksAsync(controlId, status);
+        return Ok(tasks);
+    }
+
+    /// <summary>
+    /// Get verification history for a control
+    /// </summary>
+    [HttpGet("automation/controls/{controlId:guid}/verifications")]
+    [ProducesResponseType(typeof(List<ControlVerificationResultDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetVerificationHistory(Guid controlId, [FromQuery] int limit = 10)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var history = await _automationService.GetVerificationHistoryAsync(controlId, limit);
+        return Ok(history);
+    }
+
+    /// <summary>
+    /// Get compliance dashboard summary
+    /// </summary>
+    [HttpGet("automation/dashboard")]
+    [ProducesResponseType(typeof(ComplianceDashboardDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDashboard([FromQuery] string? frameworkName = null)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var dashboard = await _automationService.GetComplianceDashboardAsync(frameworkName);
+        return Ok(dashboard);
+    }
+
+    /// <summary>
+    /// Create or update verification schedule
+    /// </summary>
+    [HttpPost("automation/schedules")]
+    [Authorize(Roles = "admin")]
+    [ProducesResponseType(typeof(VerificationScheduleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CreateOrUpdateSchedule([FromBody] CreateVerificationScheduleDto request)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            var schedule = await _automationService.CreateOrUpdateScheduleAsync(request);
+            return Ok(schedule);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get verification schedule for a control
+    /// </summary>
+    [HttpGet("automation/schedules/{controlId:guid}")]
+    [ProducesResponseType(typeof(VerificationScheduleDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSchedule(Guid controlId)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var schedule = await _automationService.GetScheduleAsync(controlId);
+        if (schedule == null)
+            return NotFound(new { error = "Schedule not found for the specified control" });
+
+        return Ok(schedule);
+    }
+
+    /// <summary>
+    /// Delete verification schedule
+    /// </summary>
+    [HttpDelete("automation/schedules/{controlId:guid}")]
+    [Authorize(Roles = "admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteSchedule(Guid controlId)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        await _automationService.DeleteScheduleAsync(controlId);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Get compliance trend data over time
+    /// </summary>
+    [HttpGet("automation/frameworks/{frameworkName}/trend")]
+    [ProducesResponseType(typeof(ComplianceTrendDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetComplianceTrend(string frameworkName, [FromQuery] int days = 30)
+    {
+        if (_automationService == null)
+            return StatusCode(503, new { error = "Compliance automation service not available" });
+
+        var trend = await _automationService.GetComplianceTrendAsync(frameworkName, days);
+        return Ok(trend);
+    }
+
     private Guid GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -352,4 +637,11 @@ public class CriticalGapsResponse
     public List<ComplianceStatusDto> Frameworks { get; set; } = new();
     public int TotalFrameworks { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+// Automated Compliance DTOs
+public class UpdateRemediationTaskStatusDto
+{
+    public string Status { get; set; } = string.Empty;
+    public string? Notes { get; set; }
 }

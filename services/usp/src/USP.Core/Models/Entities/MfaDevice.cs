@@ -18,6 +18,10 @@ public class MfaDevice
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }
 
+    // Push notification fields
+    public string? PushToken { get; set; }
+    public string? DevicePlatform { get; set; } // iOS, Android
+
     // Navigation properties
     public virtual ApplicationUser User { get; set; } = null!;
 }

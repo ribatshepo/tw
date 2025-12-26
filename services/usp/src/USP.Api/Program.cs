@@ -253,6 +253,7 @@ try
     // Audit and Compliance Services
     builder.Services.AddScoped<IAuditService, AuditService>();
     builder.Services.AddScoped<IComplianceEngine, ComplianceEngine>();
+    builder.Services.AddScoped<IComplianceAutomationService, ComplianceAutomationService>();
 
     // Webhook Services
     builder.Services.AddScoped<IWebhookService, WebhookService>();
@@ -263,6 +264,7 @@ try
     builder.Services.AddScoped<IDualControlService, DualControlService>();
     builder.Services.AddScoped<IPasswordRotationService, PasswordRotationService>();
     builder.Services.AddScoped<ISessionRecordingService, SessionRecordingService>();
+    builder.Services.AddScoped<ISessionPlaybackService, SessionPlaybackService>();
     builder.Services.AddScoped<IJitAccessService, JitAccessService>();
     builder.Services.AddScoped<IBreakGlassService, BreakGlassService>();
     builder.Services.AddScoped<IAccessAnalyticsEngine, AccessAnalyticsEngine>();
@@ -272,6 +274,7 @@ try
     builder.Services.AddScoped<IOAuth2Service, OAuth2Service>();
     builder.Services.AddScoped<IPasswordlessAuthService, PasswordlessAuthService>();
     builder.Services.AddScoped<IRiskAssessmentService, USP.Infrastructure.Services.Risk.RiskAssessmentService>();
+    builder.Services.AddScoped<IAdaptiveAuthPolicyEngine, AdaptiveAuthPolicyEngine>();
     builder.Services.AddScoped<ISamlService, SamlService>();
     builder.Services.AddScoped<ILdapService, LdapService>();
 
@@ -287,6 +290,7 @@ try
     builder.Services.AddScoped<IKvEngine, KvEngine>();
     builder.Services.AddScoped<ITransitEngine, TransitEngine>();
     builder.Services.AddScoped<IPkiEngine, PkiEngine>();
+    builder.Services.AddScoped<ILeaseManagementService, LeaseManagementService>();
 
     // FluentValidation
     builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();

@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace USP.Core.Models.Entities;
 
 /// <summary>
@@ -12,7 +10,7 @@ public class Secret
     public byte[] EncryptedValue { get; set; } = Array.Empty<byte>();
     public string EncryptedData { get; set; } = string.Empty; // Base64 encoded encrypted data for KV v2
     public int EncryptionKeyVersion { get; set; }
-    public JsonDocument? Metadata { get; set; }
+    public string? Metadata { get; set; } // JSON string
     public int Version { get; set; } = 1;
     public Guid? CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

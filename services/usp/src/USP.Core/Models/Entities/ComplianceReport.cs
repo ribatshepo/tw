@@ -34,7 +34,7 @@ public class ComplianceReport
 public class ComplianceControl
 {
     public Guid Id { get; set; }
-    public Guid ReportId { get; set; }
+    public Guid? ReportId { get; set; }
     public string ControlId { get; set; } = string.Empty; // e.g., SOC2-CC6.1, HIPAA-164.308
     public string ControlName { get; set; } = string.Empty;
     public string ControlDescription { get; set; } = string.Empty;
@@ -46,7 +46,14 @@ public class ComplianceControl
     public DateTime? LastAssessed { get; set; }
     public Guid? AssessedBy { get; set; }
 
+    // Automated compliance properties
+    public string FrameworkName { get; set; } = string.Empty; // SOC2, HIPAA, PCI-DSS, etc.
+    public string? ControlType { get; set; } // access, encryption, audit, monitoring, etc.
+    public bool IsActive { get; set; } = true;
+    public string Name { get; set; } = string.Empty; // Simplified name for automated verification
+    public string? Description { get; set; } // Simplified description for automated verification
+
     // Navigation properties
-    public virtual ComplianceReport Report { get; set; } = null!;
+    public virtual ComplianceReport? Report { get; set; }
     public virtual ApplicationUser? AssessedByUser { get; set; }
 }

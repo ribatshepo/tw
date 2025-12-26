@@ -40,6 +40,7 @@ public class DatabaseConfigConfiguration : IEntityTypeConfiguration<DatabaseConf
             .HasDefaultValue(3600);
 
         builder.Property(d => d.AdditionalConfig)
+            .HasColumnName("additional_config")
             .HasColumnType("jsonb");
 
         builder.Property(d => d.ConfiguredAt)

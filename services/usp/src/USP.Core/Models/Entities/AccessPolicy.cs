@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace USP.Core.Models.Entities;
 
 /// <summary>
@@ -19,9 +17,9 @@ public class AccessPolicy
 
     // Legacy ABAC fields (optional, for JSON-based ABAC policies)
     public string Effect { get; set; } = "allow";
-    public JsonDocument? Subjects { get; set; }
-    public JsonDocument? Resources { get; set; }
+    public string? Subjects { get; set; } // JSON string
+    public string? Resources { get; set; } // JSON string
     public string[]? Actions { get; set; }
-    public JsonDocument? Conditions { get; set; }
+    public string? Conditions { get; set; } // JSON string
     public int Priority { get; set; }
 }

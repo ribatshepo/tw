@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -75,6 +76,20 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<DatabaseConfig> DatabaseConfigs { get; set; }
     public DbSet<DatabaseRole> DatabaseRoles { get; set; }
     public DbSet<DatabaseLease> DatabaseLeases { get; set; }
+
+    // Lease Management DbSets
+    public DbSet<Lease> Leases { get; set; }
+    public DbSet<LeaseRenewalHistory> LeaseRenewalHistories { get; set; }
+
+    // Adaptive Authentication DbSets
+    public DbSet<AdaptiveAuthPolicy> AdaptiveAuthPolicies { get; set; }
+    public DbSet<AuthenticationEvent> AuthenticationEvents { get; set; }
+    public DbSet<StepUpSession> StepUpSessions { get; set; }
+
+    // Compliance Automation DbSets
+    public DbSet<ComplianceControlVerification> ComplianceControlVerifications { get; set; }
+    public DbSet<ComplianceRemediationTask> ComplianceRemediationTasks { get; set; }
+    public DbSet<ComplianceVerificationSchedule> ComplianceVerificationSchedules { get; set; }
 
     // Workspace/Multi-tenancy DbSets
     public DbSet<USP.Core.Models.Entities.Workspace> Workspaces { get; set; }

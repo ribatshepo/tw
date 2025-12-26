@@ -20,6 +20,7 @@ public class BiometricAuthService : IBiometricAuthService
     private readonly ILogger<BiometricAuthService> _logger;
     private readonly IRiskAssessmentService _riskService;
     private readonly IConfiguration _configuration;
+    private readonly IBiometricVerifier _biometricVerifier;
 
     private const int MinimumMatchThreshold = 70; // Minimum confidence score to accept match
     private const int MaxFailedAttempts = 5;
@@ -29,13 +30,15 @@ public class BiometricAuthService : IBiometricAuthService
         IJwtService jwtService,
         ILogger<BiometricAuthService> logger,
         IRiskAssessmentService riskService,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IBiometricVerifier biometricVerifier)
     {
         _context = context;
         _jwtService = jwtService;
         _logger = logger;
         _riskService = riskService;
         _configuration = configuration;
+        _biometricVerifier = biometricVerifier;
     }
 
     public async Task<EnrollBiometricResponse> EnrollBiometricAsync(EnrollBiometricRequest request)
@@ -333,11 +336,178 @@ public class BiometricAuthService : IBiometricAuthService
         string ipAddress,
         string userAgent)
     {
-        await Task.CompletedTask;
-        throw new NotSupportedException(
-            "Biometric/PIN hybrid authentication requires integration with a certified biometric SDK and PIN storage mechanism. " +
-            "Configure BiometricSettings:SdkProvider in appsettings.json. " +
-            "For PIN authentication, implement secure PIN hashing and verification.");
+        try
+        {
+            _logger.LogInformation("Biometric/PIN authentication attempt for {Identifier}", request.Identifier);
+
+            // Find user by identifier (username or email)
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.UserName == request.Identifier || u.Email == request.Identifier);
+
+            if (user == null)
+            {
+                _logger.LogWarning("User not found: {Identifier}", request.Identifier);
+                return new BiometricAuthResponse
+                {
+                    Success = false,
+                    ErrorMessage = "Invalid credentials"
+                };
+            }
+
+            // Check if user is active
+            if (!user.IsActive)
+            {
+                _logger.LogWarning("Inactive user attempted authentication: {UserId}", user.Id);
+                return new BiometricAuthResponse
+                {
+                    Success = false,
+                    ErrorMessage = "Account is disabled"
+                };
+            }
+
+            // Get biometric templates for this device
+            var biometrics = await _context.Set<BiometricTemplate>()
+                .Where(b => b.UserId == user.Id && b.DeviceId == request.DeviceId && b.IsActive)
+                .ToListAsync();
+
+            if (biometrics.Count == 0)
+            {
+                _logger.LogWarning("No biometric templates found for user {UserId} on device {DeviceId}",
+                    user.Id, request.DeviceId);
+                return new BiometricAuthResponse
+                {
+                    Success = false,
+                    ErrorMessage = "No biometric enrolled for this device"
+                };
+            }
+
+            bool authenticated = false;
+            string authMethod = "";
+            int confidenceScore = 0;
+
+            // Try biometric authentication first
+            if (!string.IsNullOrEmpty(request.BiometricData))
+            {
+                foreach (var biometric in biometrics)
+                {
+                    // Check if biometric is locked due to failed attempts
+                    if (biometric.FailedAttempts >= MaxFailedAttempts)
+                    {
+                        _logger.LogWarning("Biometric locked for user {UserId}: too many failed attempts", user.Id);
+                        continue;
+                    }
+
+                    var (isMatch, score) = await VerifyBiometricInternalAsync(biometric, request.BiometricData);
+
+                    if (isMatch && score >= MinimumMatchThreshold)
+                    {
+                        authenticated = true;
+                        authMethod = $"Biometric-{biometric.BiometricType}";
+                        confidenceScore = score;
+
+                        // Reset failed attempts and update usage
+                        biometric.FailedAttempts = 0;
+                        biometric.LastUsedAt = DateTime.UtcNow;
+                        biometric.AuthenticationCount++;
+                        biometric.UpdatedAt = DateTime.UtcNow;
+
+                        await _context.SaveChangesAsync();
+                        break;
+                    }
+                    else
+                    {
+                        // Increment failed attempts
+                        biometric.FailedAttempts++;
+                        biometric.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+
+                        _logger.LogWarning("Biometric match failed for user {UserId}, score: {Score}",
+                            user.Id, score);
+                    }
+                }
+            }
+
+            // If biometric failed, try PIN authentication
+            if (!authenticated && !string.IsNullOrEmpty(request.PinCode))
+            {
+                foreach (var biometric in biometrics)
+                {
+                    if (!string.IsNullOrEmpty(biometric.PinHash))
+                    {
+                        // Verify PIN using BCrypt
+                        var pinMatch = BCrypt.Net.BCrypt.Verify(request.PinCode, biometric.PinHash);
+
+                        if (pinMatch)
+                        {
+                            authenticated = true;
+                            authMethod = "PIN";
+                            confidenceScore = 85; // PIN has lower confidence than biometric
+
+                            // Reset failed attempts and update usage
+                            biometric.FailedAttempts = 0;
+                            biometric.LastUsedAt = DateTime.UtcNow;
+                            biometric.AuthenticationCount++;
+                            biometric.UpdatedAt = DateTime.UtcNow;
+
+                            await _context.SaveChangesAsync();
+                            break;
+                        }
+                        else
+                        {
+                            // Increment failed attempts
+                            biometric.FailedAttempts++;
+                            biometric.UpdatedAt = DateTime.UtcNow;
+                            await _context.SaveChangesAsync();
+
+                            _logger.LogWarning("PIN verification failed for user {UserId}", user.Id);
+                        }
+                    }
+                }
+            }
+
+            if (!authenticated)
+            {
+                _logger.LogWarning("Authentication failed for user {UserId} - no valid biometric or PIN", user.Id);
+                return new BiometricAuthResponse
+                {
+                    Success = false,
+                    ErrorMessage = "Authentication failed"
+                };
+            }
+
+            // Generate tokens
+            var roles = await _context.UserRoles
+                .Where(ur => ur.UserId == user.Id)
+                .Join(_context.Roles,
+                    ur => ur.RoleId,
+                    r => r.Id,
+                    (ur, r) => r.Name!)
+                .ToListAsync();
+
+            var accessToken = _jwtService.GenerateAccessToken(user, roles);
+            var refreshToken = GenerateRefreshToken();
+
+            _logger.LogInformation(
+                "User {UserId} authenticated successfully using {AuthMethod}, confidence: {Confidence}",
+                user.Id, authMethod, confidenceScore);
+
+            return new BiometricAuthResponse
+            {
+                Success = true,
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                ExpiresAt = DateTime.UtcNow.AddHours(1)
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Biometric/PIN authentication error for {Identifier}", request.Identifier);
+            return new BiometricAuthResponse
+            {
+                Success = false,
+                ErrorMessage = "Authentication error occurred"
+            };
+        }
     }
 
     public async Task<IEnumerable<BiometricDeviceDto>> GetUserBiometricsAsync(Guid userId)
@@ -526,11 +696,30 @@ public class BiometricAuthService : IBiometricAuthService
         BiometricTemplate storedBiometric,
         string providedTemplateData)
     {
-        await Task.CompletedTask;
-        throw new NotSupportedException(
-            "Biometric authentication requires integration with a certified biometric SDK. " +
-            "Configure BiometricSettings:SdkProvider in appsettings.json with one of: " +
-            "Neurotechnology, Innovatrics, or custom implementation implementing IBiometricVerifier interface.");
+        try
+        {
+            // Decrypt stored template
+            var decryptedTemplate = DecryptBiometricTemplate(
+                storedBiometric.EncryptedTemplateData,
+                storedBiometric.EncryptionIv);
+
+            // Use biometric verifier to compare templates
+            var (isMatch, confidenceScore) = await _biometricVerifier.VerifyAsync(
+                decryptedTemplate,
+                providedTemplateData,
+                storedBiometric.BiometricType);
+
+            _logger.LogInformation(
+                "Biometric verification for user {UserId}: IsMatch={IsMatch}, Score={Score}",
+                storedBiometric.UserId, isMatch, confidenceScore);
+
+            return (isMatch, confidenceScore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Biometric verification failed for user {UserId}", storedBiometric.UserId);
+            return (false, 0);
+        }
     }
 
     private static string GenerateRefreshToken()

@@ -7,11 +7,15 @@ using OtpNet;
 using QRCoder;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using USP.Core.Models.DTOs.Mfa;
 using USP.Core.Models.Entities;
 using USP.Core.Services.Communication;
 using USP.Core.Services.Mfa;
 using USP.Infrastructure.Data;
+using FirebaseAdmin;
+using FirebaseAdmin.Messaging;
+using Google.Apis.Auth.OAuth2;
 
 namespace USP.Infrastructure.Services.Mfa;
 
@@ -26,13 +30,16 @@ public class MfaService : IMfaService
     private readonly ILogger<MfaService> _logger;
     private readonly ISmsService _smsService;
     private readonly IMemoryCache _cache;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     private const int BackupCodeCount = 10;
     private const int BackupCodeLength = 8;
     private const string PhoneVerificationCodeCachePrefix = "mfa:phone:verify:";
     private const string SmsOtpCodeCachePrefix = "mfa:sms:otp:";
+    private const string YubiKeyOtpCachePrefix = "mfa:yubikey:otp:";
     private const int VerificationCodeExpirationMinutes = 10;
     private const int SmsOtpExpirationMinutes = 5;
+    private const int YubiKeyOtpCacheExpirationSeconds = 60;
 
     public MfaService(
         ApplicationDbContext context,
@@ -40,7 +47,8 @@ public class MfaService : IMfaService
         IConfiguration configuration,
         ILogger<MfaService> logger,
         ISmsService smsService,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IHttpClientFactory httpClientFactory)
     {
         _context = context;
         _userManager = userManager;
@@ -48,6 +56,7 @@ public class MfaService : IMfaService
         _logger = logger;
         _smsService = smsService;
         _cache = cache;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<EnrollTotpResponse> EnrollTotpAsync(Guid userId, string deviceName)
@@ -547,12 +556,232 @@ public class MfaService : IMfaService
 
     public async Task<bool> SendPushNotificationAsync(Guid userId, string message, string actionType = "approve")
     {
-        await Task.CompletedTask;
-        throw new NotSupportedException(
-            "Push notification MFA requires Firebase Cloud Messaging (FCM) or Apple Push Notification Service (APNS) configuration. " +
-            "Configure MfaSettings:PushNotificationProvider in appsettings.json. " +
-            "Supported providers: FCM, APNS. " +
-            "For implementation, install NuGet: FirebaseAdmin or ApnsDotNet.");
+        // Get user's push notification devices
+        var pushDevices = await _context.MfaDevices
+            .Where(d => d.UserId == userId &&
+                       d.DeviceType == "Push" &&
+                       d.IsActive &&
+                       !string.IsNullOrEmpty(d.PushToken))
+            .ToListAsync();
+
+        if (!pushDevices.Any())
+        {
+            _logger.LogWarning("No active push notification devices found for user {UserId}", userId);
+            return false;
+        }
+
+        // Store pending approval in cache
+        var cacheKey = $"mfa:push:approval:{userId}";
+        var cacheData = new
+        {
+            UserId = userId,
+            Message = message,
+            ActionType = actionType,
+            SentAt = DateTime.UtcNow
+        };
+        _cache.Set(cacheKey, cacheData, TimeSpan.FromMinutes(5));
+
+        // Send notification to all registered devices
+        var successCount = 0;
+        foreach (var device in pushDevices)
+        {
+            try
+            {
+                bool sent = false;
+
+                if (device.DevicePlatform == "Android")
+                {
+                    sent = await SendFcmNotificationAsync(device.PushToken, message, actionType, userId);
+                }
+                else if (device.DevicePlatform == "iOS")
+                {
+                    sent = await SendApnsNotificationAsync(device.PushToken, message, actionType, userId);
+                }
+                else
+                {
+                    _logger.LogWarning("Unsupported device platform: {Platform}", device.DevicePlatform);
+                    continue;
+                }
+
+                if (sent)
+                {
+                    successCount++;
+                    device.LastUsedAt = DateTime.UtcNow;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to send push notification to device {DeviceId} for user {UserId}",
+                    device.Id, userId);
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        if (successCount > 0)
+        {
+            _logger.LogInformation(
+                "Push notifications sent to {Count}/{Total} devices for user {UserId}",
+                successCount, pushDevices.Count, userId);
+            return true;
+        }
+
+        _logger.LogWarning("Failed to send push notifications to any device for user {UserId}", userId);
+        return false;
+    }
+
+    /// <summary>
+    /// Sends push notification via Firebase Cloud Messaging (FCM) for Android
+    /// </summary>
+    private async Task<bool> SendFcmNotificationAsync(string deviceToken, string message, string actionType, Guid userId)
+    {
+        try
+        {
+            // Check configuration
+            var serviceAccountKeyPath = _configuration["MfaSettings:FcmServiceAccountKeyPath"];
+            if (string.IsNullOrWhiteSpace(serviceAccountKeyPath))
+            {
+                _logger.LogError("FCM service account key path not configured");
+                throw new InvalidOperationException(
+                    "FCM is not configured. Set MfaSettings:FcmServiceAccountKeyPath in appsettings.json");
+            }
+
+            // Initialize Firebase if not already initialized
+            if (FirebaseApp.DefaultInstance == null)
+            {
+                if (!File.Exists(serviceAccountKeyPath))
+                {
+                    _logger.LogError("FCM service account key file not found: {Path}", serviceAccountKeyPath);
+                    throw new FileNotFoundException($"FCM service account key file not found: {serviceAccountKeyPath}");
+                }
+
+                FirebaseApp.Create(new AppOptions
+                {
+                    Credential = GoogleCredential.FromFile(serviceAccountKeyPath)
+                });
+
+                _logger.LogInformation("Firebase Admin SDK initialized");
+            }
+
+            // Create FCM message
+            var fcmMessage = new Message
+            {
+                Token = deviceToken,
+                Notification = new Notification
+                {
+                    Title = "MFA Verification Required",
+                    Body = message
+                },
+                Data = new Dictionary<string, string>
+                {
+                    { "action_type", actionType },
+                    { "user_id", userId.ToString() },
+                    { "timestamp", DateTime.UtcNow.ToString("o") }
+                },
+                Android = new AndroidConfig
+                {
+                    Priority = Priority.High,
+                    Notification = new AndroidNotification
+                    {
+                        ClickAction = "MFA_APPROVAL_ACTION",
+                        Sound = "default"
+                    }
+                }
+            };
+
+            // Send message
+            var response = await FirebaseMessaging.DefaultInstance.SendAsync(fcmMessage);
+
+            _logger.LogInformation("FCM notification sent successfully. Message ID: {MessageId}", response);
+            return true;
+        }
+        catch (FirebaseMessagingException ex)
+        {
+            _logger.LogError(ex, "FCM notification failed: {ErrorCode}", ex.MessagingErrorCode);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send FCM notification");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Sends push notification via Apple Push Notification Service (APNS) for iOS
+    /// </summary>
+    private async Task<bool> SendApnsNotificationAsync(string deviceToken, string message, string actionType, Guid userId)
+    {
+        try
+        {
+            // Check configuration
+            var keyPath = _configuration["MfaSettings:ApnsKeyPath"];
+            var keyId = _configuration["MfaSettings:ApnsKeyId"];
+            var teamId = _configuration["MfaSettings:ApnsTeamId"];
+            var bundleId = _configuration["MfaSettings:ApnsBundleId"];
+            var useSandbox = _configuration.GetValue<bool>("MfaSettings:ApnsUseSandbox", true);
+
+            if (string.IsNullOrWhiteSpace(keyPath) || string.IsNullOrWhiteSpace(keyId) ||
+                string.IsNullOrWhiteSpace(teamId) || string.IsNullOrWhiteSpace(bundleId))
+            {
+                _logger.LogError("APNS configuration incomplete");
+                throw new InvalidOperationException(
+                    "APNS is not configured. Set MfaSettings:ApnsKeyPath, ApnsKeyId, ApnsTeamId, and ApnsBundleId in appsettings.json");
+            }
+
+            // Use Firebase Admin SDK for APNS (simpler than implementing HTTP/2 directly)
+            // Firebase Admin SDK supports both FCM and APNS
+            if (FirebaseApp.DefaultInstance != null)
+            {
+                var apnsMessage = new Message
+                {
+                    Token = deviceToken,
+                    Notification = new Notification
+                    {
+                        Title = "MFA Verification Required",
+                        Body = message
+                    },
+                    Data = new Dictionary<string, string>
+                    {
+                        { "action_type", actionType },
+                        { "user_id", userId.ToString() },
+                        { "timestamp", DateTime.UtcNow.ToString("o") }
+                    },
+                    Apns = new ApnsConfig
+                    {
+                        Aps = new Aps
+                        {
+                            Alert = new ApsAlert
+                            {
+                                Title = "MFA Verification Required",
+                                Body = message
+                            },
+                            Badge = 1,
+                            Sound = "default",
+                            ContentAvailable = true
+                        }
+                    }
+                };
+
+                var response = await FirebaseMessaging.DefaultInstance.SendAsync(apnsMessage);
+                _logger.LogInformation("APNS notification sent successfully via FCM. Message ID: {MessageId}", response);
+                return true;
+            }
+
+            _logger.LogWarning("Firebase not initialized, skipping APNS notification");
+            return false;
+        }
+        catch (FirebaseMessagingException ex)
+        {
+            _logger.LogError(ex, "APNS notification failed: {ErrorCode}", ex.MessagingErrorCode);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send APNS notification");
+            return false;
+        }
     }
 
     public async Task<bool> VerifyPushApprovalAsync(Guid userId, bool approved)
@@ -631,11 +860,221 @@ public class MfaService : IMfaService
 
     public async Task<bool> VerifyHardwareTokenAsync(Guid userId, string otp)
     {
-        await Task.CompletedTask;
-        throw new NotSupportedException(
-            "YubiKey OTP validation requires Yubico API integration. " +
-            "Configure MfaSettings:YubicoClientId and MfaSettings:YubicoSecretKey in appsettings.json. " +
-            "Get credentials from: https://upgrade.yubico.com/getapikey/");
+        // Validate configuration
+        var clientId = _configuration["MfaSettings:YubicoClientId"];
+        var secretKey = _configuration["MfaSettings:YubicoSecretKey"];
+
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(secretKey))
+        {
+            _logger.LogError("YubiKey OTP validation failed: YubicoClientId or YubicoSecretKey not configured");
+            throw new InvalidOperationException(
+                "YubiKey OTP validation is not configured. " +
+                "Set MfaSettings:YubicoClientId and MfaSettings:YubicoSecretKey in appsettings.json. " +
+                "Get credentials from: https://upgrade.yubico.com/getapikey/");
+        }
+
+        // Validate OTP format (YubiKey OTP is typically 44 characters but can be 32-48)
+        if (string.IsNullOrWhiteSpace(otp) || otp.Length < 32 || otp.Length > 48)
+        {
+            _logger.LogWarning("Invalid YubiKey OTP format for user {UserId}: length {Length}", userId, otp?.Length ?? 0);
+            return false;
+        }
+
+        // Extract public ID from OTP (first 12 characters is standard, but can vary)
+        // The public ID length is variable, but typically 12 chars. The OTP portion is always 32 chars.
+        var publicId = otp.Length >= 44 ? otp.Substring(0, 12) : otp.Substring(0, otp.Length - 32);
+
+        // Check for replay attack using cache
+        var cacheKey = $"{YubiKeyOtpCachePrefix}{otp}";
+        if (_cache.TryGetValue(cacheKey, out _))
+        {
+            _logger.LogWarning("YubiKey OTP replay attack detected for user {UserId}, OTP: {PublicId}...", userId, publicId);
+            return false;
+        }
+
+        // Find user's hardware token device
+        var device = await _context.MfaDevices
+            .FirstOrDefaultAsync(d =>
+                d.UserId == userId &&
+                d.DeviceType == "HardwareToken" &&
+                d.IsActive);
+
+        if (device == null)
+        {
+            _logger.LogWarning("No active hardware token found for user {UserId}", userId);
+            return false;
+        }
+
+        // Verify device fingerprint matches the public ID
+        if (!string.IsNullOrEmpty(device.DeviceFingerprint) && device.DeviceFingerprint != publicId)
+        {
+            _logger.LogWarning(
+                "YubiKey public ID mismatch for user {UserId}. Expected: {Expected}, Got: {Got}",
+                userId, device.DeviceFingerprint, publicId);
+            return false;
+        }
+
+        try
+        {
+            // Verify OTP with Yubico Validation API
+            var (isValid, statusMessage) = await VerifyYubiKeyOtpWithApiAsync(clientId, secretKey, otp);
+
+            if (!isValid)
+            {
+                _logger.LogWarning(
+                    "YubiKey OTP verification failed for user {UserId}: {Status}",
+                    userId, statusMessage);
+                return false;
+            }
+
+            // Cache the validated OTP to prevent replay attacks
+            _cache.Set(cacheKey, true, TimeSpan.FromSeconds(YubiKeyOtpCacheExpirationSeconds));
+
+            // Update device last used timestamp
+            device.LastUsedAt = DateTime.UtcNow;
+
+            // Update device fingerprint if not set
+            if (string.IsNullOrEmpty(device.DeviceFingerprint))
+            {
+                device.DeviceFingerprint = publicId;
+            }
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "YubiKey OTP verified successfully for user {UserId}, public ID: {PublicId}",
+                userId, publicId);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error during YubiKey OTP verification for user {UserId}",
+                userId);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Verifies YubiKey OTP using Yubico Validation API v2.0
+    /// </summary>
+    private async Task<(bool IsValid, string StatusMessage)> VerifyYubiKeyOtpWithApiAsync(
+        string clientId, string secretKey, string otp)
+    {
+        // Generate nonce (random value for preventing replay attacks)
+        var nonce = Guid.NewGuid().ToString("N");
+
+        // Build request parameters
+        var parameters = new Dictionary<string, string>
+        {
+            { "id", clientId },
+            { "otp", otp },
+            { "nonce", nonce }
+        };
+
+        // Calculate HMAC signature
+        var sortedParams = string.Join("&", parameters.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
+        var signature = CalculateHmacSha1(sortedParams, secretKey);
+        parameters.Add("h", signature);
+
+        // Get API URLs with fallback
+        var apiUrls = _configuration.GetSection("MfaSettings:YubicoApiUrls").Get<string[]>()
+            ?? new[] { "https://api.yubico.com/wsapi/2.0/verify" };
+
+        var timeoutSeconds = _configuration.GetValue<int>("MfaSettings:YubicoTimeoutSeconds", 15);
+
+        // Try each API URL until one succeeds
+        foreach (var apiUrl in apiUrls)
+        {
+            try
+            {
+                var queryString = string.Join("&", parameters.Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value)}"));
+                var requestUrl = $"{apiUrl}?{queryString}";
+
+                using var httpClient = _httpClientFactory.CreateClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+
+                _logger.LogDebug("Calling Yubico API: {Url}", apiUrl);
+
+                var response = await httpClient.GetStringAsync(requestUrl);
+
+                // Parse response
+                var responseDict = response.Split('\n')
+                    .Where(line => line.Contains('='))
+                    .Select(line => line.Split('='))
+                    .ToDictionary(parts => parts[0].Trim(), parts => parts[1].Trim());
+
+                if (!responseDict.TryGetValue("status", out var status))
+                {
+                    _logger.LogWarning("YubiKey API response missing status field");
+                    continue;
+                }
+
+                // Verify response nonce matches request nonce
+                if (responseDict.TryGetValue("nonce", out var responseNonce) && responseNonce != nonce)
+                {
+                    _logger.LogWarning("YubiKey API response nonce mismatch");
+                    continue;
+                }
+
+                // Verify HMAC signature of response
+                if (responseDict.TryGetValue("h", out var responseSignature))
+                {
+                    var responseParams = string.Join("&",
+                        responseDict.Where(p => p.Key != "h")
+                            .OrderBy(p => p.Key)
+                            .Select(p => $"{p.Key}={p.Value}"));
+                    var expectedSignature = CalculateHmacSha1(responseParams, secretKey);
+
+                    if (responseSignature != expectedSignature)
+                    {
+                        _logger.LogWarning("YubiKey API response signature mismatch");
+                        continue;
+                    }
+                }
+
+                // Check status
+                if (status == "OK")
+                {
+                    // Verify OTP matches
+                    if (responseDict.TryGetValue("otp", out var responseOtp) && responseOtp != otp)
+                    {
+                        _logger.LogWarning("YubiKey API response OTP mismatch");
+                        return (false, "OTP mismatch in response");
+                    }
+
+                    return (true, "OK");
+                }
+                else
+                {
+                    return (false, status);
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                _logger.LogWarning("YubiKey API timeout for URL: {Url}", apiUrl);
+                continue;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "YubiKey API request failed for URL: {Url}", apiUrl);
+                continue;
+            }
+        }
+
+        return (false, "All API endpoints failed");
+    }
+
+    /// <summary>
+    /// Calculates HMAC-SHA1 signature for Yubico API
+    /// </summary>
+    private string CalculateHmacSha1(string message, string secretKey)
+    {
+        var keyBytes = Convert.FromBase64String(secretKey);
+        using var hmac = new HMACSHA1(keyBytes);
+        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+        return Convert.ToBase64String(hashBytes);
     }
 
     public async Task<bool> EnrollPushNotificationAsync(Guid userId, string deviceToken, string devicePlatform)
@@ -653,17 +1092,22 @@ public class MfaService : IMfaService
             await _userManager.UpdateAsync(user);
         }
 
-        // Check if push device already exists
+        // Check if push device already exists for this platform
         var existingDevice = await _context.MfaDevices
             .FirstOrDefaultAsync(d => d.UserId == userId &&
                                      d.DeviceType == "Push" &&
-                                     d.DeviceName.Contains(devicePlatform) &&
+                                     d.DevicePlatform == devicePlatform &&
                                      d.IsActive);
 
         if (existingDevice != null)
         {
             // Update device token
-            _logger.LogInformation("Updating push notification device for user {UserId}", userId);
+            existingDevice.PushToken = deviceToken;
+            existingDevice.LastUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Updated push notification device token for user {UserId}, platform: {Platform}",
+                userId, devicePlatform);
             return true;
         }
 
@@ -674,6 +1118,8 @@ public class MfaService : IMfaService
             UserId = userId,
             DeviceType = "Push",
             DeviceName = $"Push ({devicePlatform})",
+            PushToken = deviceToken,
+            DevicePlatform = devicePlatform,
             IsActive = true,
             IsPrimary = false,
             RegisteredAt = DateTime.UtcNow

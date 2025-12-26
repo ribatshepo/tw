@@ -19,6 +19,10 @@ public class PrivilegedSession
     public string? RecordingPath { get; set; } // Path to session recording file
     public bool IsRecorded { get; set; } = false; // Whether session is being recorded
     public long RecordingSize { get; set; } = 0; // Size in bytes
+    public string RecordingFormat { get; set; } = "command-log"; // command-log or video
+    public int? FrameRate { get; set; } // For video recordings (e.g., 30 fps)
+    public string? VideoCodec { get; set; } // For video recordings (e.g., h264, vp9)
+    public int? Duration { get; set; } // Session duration in seconds
     public string SessionType { get; set; } = string.Empty; // interactive, automated, query_only
     public int CommandCount { get; set; } = 0;
     public int QueryCount { get; set; } = 0;

@@ -60,9 +60,9 @@ public class KvEngine : IKvEngine
         if (existingSecrets.Count > 0)
         {
             var latestSecret = existingSecrets[0];
-            if (latestSecret.Metadata != null)
+            if (!string.IsNullOrEmpty(latestSecret.Metadata))
             {
-                var storedMetadata = JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata.RootElement.GetRawText());
+                var storedMetadata = JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata);
                 if (storedMetadata != null)
                 {
                     if (storedMetadata.TryGetValue("cas_required", out var casRequiredObj) && casRequiredObj is JsonElement casRequiredElement)
@@ -109,7 +109,7 @@ public class KvEngine : IKvEngine
             Path = path,
             Version = newVersion,
             EncryptedData = encryptedData,
-            Metadata = JsonDocument.Parse(metadataJson),
+            Metadata = metadataJson,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = userId,
             IsDeleted = false,
@@ -307,8 +307,8 @@ public class KvEngine : IKvEngine
         var latestSecret = secrets.OrderByDescending(s => s.Version).First();
         var oldestSecret = secrets.First();
 
-        var storedMetadata = latestSecret.Metadata != null
-            ? JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata.RootElement.GetRawText())
+        var storedMetadata = !string.IsNullOrEmpty(latestSecret.Metadata)
+            ? JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata)
             : new Dictionary<string, object>();
 
         var maxVersions = DefaultMaxVersions;
@@ -393,8 +393,8 @@ public class KvEngine : IKvEngine
 
         var latestSecret = secrets.OrderByDescending(s => s.Version).First();
 
-        var existingMetadata = latestSecret.Metadata != null
-            ? JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata.RootElement.GetRawText())
+        var existingMetadata = !string.IsNullOrEmpty(latestSecret.Metadata)
+            ? JsonSerializer.Deserialize<Dictionary<string, object>>(latestSecret.Metadata)
             : new Dictionary<string, object>();
 
         if (existingMetadata == null)
@@ -423,7 +423,7 @@ public class KvEngine : IKvEngine
         }
 
         var updatedMetadataJson = JsonSerializer.Serialize(existingMetadata);
-        latestSecret.Metadata = JsonDocument.Parse(updatedMetadataJson);
+        latestSecret.Metadata = updatedMetadataJson;
         latestSecret.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();

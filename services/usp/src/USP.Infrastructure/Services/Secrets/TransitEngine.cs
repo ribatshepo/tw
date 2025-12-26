@@ -269,7 +269,8 @@ public class TransitEngine : ITransitEngine
             .FirstOrDefaultAsync(tk => tk.Name == keyName)
             ?? throw new KeyNotFoundException($"Key '{keyName}' not found");
 
-        if (!SymmetricKeyTypes.Contains(key.Type))
+        // Check if key supports encryption (symmetric keys and RSA keys)
+        if (!SymmetricKeyTypes.Contains(key.Type) && !key.Type.StartsWith("rsa-"))
             throw new InvalidOperationException($"Key '{keyName}' of type '{key.Type}' does not support encryption. Use signing keys for signing operations.");
 
         // Determine which version to use
@@ -292,6 +293,14 @@ public class TransitEngine : ITransitEngine
         else if (key.Type == "chacha20-poly1305")
         {
             ciphertext = await EncryptWithChaCha20Poly1305Async(request.Plaintext, keyMaterial, request.Context);
+        }
+        else if (key.Type == "rsa-2048" || key.Type == "rsa-4096")
+        {
+            // For RSA, we need the public key, not the private key material
+            if (string.IsNullOrEmpty(keyVersion.PublicKey))
+                throw new InvalidOperationException($"Public key not found for RSA key version {version}");
+
+            ciphertext = await EncryptWithRsaAsync(request.Plaintext, keyVersion.PublicKey);
         }
         else
         {
@@ -319,7 +328,8 @@ public class TransitEngine : ITransitEngine
             .FirstOrDefaultAsync(tk => tk.Name == keyName)
             ?? throw new KeyNotFoundException($"Key '{keyName}' not found");
 
-        if (!SymmetricKeyTypes.Contains(key.Type))
+        // Check if key supports decryption (symmetric keys and RSA keys)
+        if (!SymmetricKeyTypes.Contains(key.Type) && !key.Type.StartsWith("rsa-"))
             throw new InvalidOperationException($"Key '{keyName}' of type '{key.Type}' does not support decryption");
 
         // Parse vault format: vault:v{version}:{ciphertext}
@@ -346,6 +356,10 @@ public class TransitEngine : ITransitEngine
         else if (key.Type == "chacha20-poly1305")
         {
             plaintext = await DecryptWithChaCha20Poly1305Async(ciphertext, keyMaterial, request.Context);
+        }
+        else if (key.Type == "rsa-2048" || key.Type == "rsa-4096")
+        {
+            plaintext = await DecryptWithRsaAsync(ciphertext, keyMaterial);
         }
         else
         {
@@ -709,6 +723,43 @@ public class TransitEngine : ITransitEngine
         var plaintext = new byte[ciphertext.Length];
 
         chacha.Decrypt(nonce, ciphertext, tag, plaintext, additionalData);
+
+        return Convert.ToBase64String(plaintext);
+    }
+
+    /// <summary>
+    /// Encrypts plaintext using RSA with OAEP SHA256 padding
+    /// </summary>
+    private async Task<string> EncryptWithRsaAsync(string plaintextBase64, string publicKeyBase64)
+    {
+        await Task.CompletedTask;
+
+        var plaintext = Convert.FromBase64String(plaintextBase64);
+        var publicKeyBytes = Convert.FromBase64String(publicKeyBase64);
+
+        using var rsa = RSA.Create();
+        rsa.ImportSubjectPublicKeyInfo(publicKeyBytes, out _);
+
+        // Use OAEP with SHA256 for maximum security
+        var ciphertext = rsa.Encrypt(plaintext, RSAEncryptionPadding.OaepSHA256);
+
+        return Convert.ToBase64String(ciphertext);
+    }
+
+    /// <summary>
+    /// Decrypts ciphertext using RSA with OAEP SHA256 padding
+    /// </summary>
+    private async Task<string> DecryptWithRsaAsync(string ciphertextBase64, byte[] privateKey)
+    {
+        await Task.CompletedTask;
+
+        var ciphertext = Convert.FromBase64String(ciphertextBase64);
+
+        using var rsa = RSA.Create();
+        rsa.ImportRSAPrivateKey(privateKey, out _);
+
+        // Use OAEP with SHA256 for maximum security
+        var plaintext = rsa.Decrypt(ciphertext, RSAEncryptionPadding.OaepSHA256);
 
         return Convert.ToBase64String(plaintext);
     }

@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace USP.Core.Models.Entities;
 
 /// <summary>
@@ -16,7 +14,7 @@ public class DatabaseConfig
     public int MaxOpenConnections { get; set; }
     public int MaxIdleConnections { get; set; }
     public int MaxConnectionLifetimeSeconds { get; set; }
-    public JsonDocument? AdditionalConfig { get; set; }
+    public string? AdditionalConfig { get; set; } // JSON string
     public DateTime ConfiguredAt { get; set; }
     public Guid ConfiguredBy { get; set; }
     public DateTime? LastRotatedAt { get; set; }
