@@ -38,6 +38,8 @@
     <PackageReference Include="StackExchange.Redis" Version="2.7.*" />
     <PackageReference Include="Sustainsys.Saml2" Version="2.10.0" />
     <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.1" />
+    <PackageReference Include="Microsoft.ML" Version="3.0.*" />
+    <PackageReference Include="Microsoft.ML.TimeSeries" Version="3.0.*" />
   </ItemGroup>
 
   <PropertyGroup>
