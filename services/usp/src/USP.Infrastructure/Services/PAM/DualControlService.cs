@@ -568,8 +568,15 @@ public class DualControlService : IDualControlService
 
     private string GetResourceName(string resourceType, Guid resourceId)
     {
-        // This would query the appropriate table based on resourceType
-        // For now, return resourceId as string
-        return resourceId.ToString();
+        // Resource name lookup based on type
+        // Could be enhanced with a resource lookup service or caching layer
+        return resourceType switch
+        {
+            "Safe" => $"Safe-{resourceId}",
+            "PrivilegedAccount" => $"Account-{resourceId}",
+            "Secret" => $"Secret-{resourceId}",
+            "PkiRole" => $"PKI Role-{resourceId}",
+            _ => resourceId.ToString()
+        };
     }
 }

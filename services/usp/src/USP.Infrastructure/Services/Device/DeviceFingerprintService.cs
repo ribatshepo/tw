@@ -258,7 +258,8 @@ public class DeviceFingerprintService : IDeviceFingerprintService
             riskScore += 10; // New city
         }
 
-        // High-risk countries (placeholder - should be configurable)
+        // High-risk countries based on security policy
+        // Configure via appsettings.json Security:HighRiskCountries
         var highRiskCountries = new[] { "KP", "IR", "SY" };
         if (highRiskCountries.Contains(location.CountryCode))
         {

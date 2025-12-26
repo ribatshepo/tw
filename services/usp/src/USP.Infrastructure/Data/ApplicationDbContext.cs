@@ -57,6 +57,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<BreakGlassPolicy> BreakGlassPolicies { get; set; }
     public DbSet<TransitKey> TransitKeys { get; set; }
     public DbSet<TransitKeyVersion> TransitKeyVersions { get; set; }
+    public DbSet<PkiCertificateAuthority> PkiCertificateAuthorities { get; set; }
+    public DbSet<PkiRole> PkiRoles { get; set; }
+    public DbSet<PkiIssuedCertificate> PkiIssuedCertificates { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -72,6 +75,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
         builder.ApplyConfiguration(new SessionConfiguration());
         builder.ApplyConfiguration(new TransitKeyConfiguration());
         builder.ApplyConfiguration(new TransitKeyVersionConfiguration());
+        builder.ApplyConfiguration(new PkiCertificateAuthorityConfiguration());
+        builder.ApplyConfiguration(new PkiRoleConfiguration());
+        builder.ApplyConfiguration(new PkiIssuedCertificateConfiguration());
+        builder.ApplyConfiguration(new SamlIdentityProviderConfiguration());
+        builder.ApplyConfiguration(new LdapConfigurationConfiguration());
 
         // Configure RolePermission
         builder.Entity<RolePermission>(entity =>

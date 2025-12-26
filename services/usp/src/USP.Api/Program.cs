@@ -27,6 +27,7 @@ using USP.Core.Services.PAM;
 using USP.Core.Services.Secrets;
 using USP.Core.Services.Session;
 using USP.Core.Services.Webhook;
+using USP.Core.Validators;
 using USP.Core.Validators.Authentication;
 using USP.Infrastructure.Data;
 using USP.Infrastructure.Services.ApiKey;
@@ -43,14 +44,17 @@ using USP.Infrastructure.Services.Secrets;
 using USP.Infrastructure.Services.Session;
 using USP.Infrastructure.Services.Webhook;
 
+// Build preliminary configuration for Serilog (before full configuration is built)
+var preliminaryConfig = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
+    .AddEnvironmentVariables(prefix: "USP_")
+    .Build();
+
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(new ConfigurationBuilder()
-        .SetBasePath(Directory.GetCurrentDirectory())
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-        .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
-        .AddEnvironmentVariables()
-        .Build())
+    .ReadFrom.Configuration(preliminaryConfig)
     .Enrich.FromLogContext()
     .Enrich.WithProperty("Application", "USP")
     .CreateLogger();
@@ -61,15 +65,37 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
+    // Configure configuration sources
+    builder.Configuration
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+        .AddEnvironmentVariables(prefix: "USP_");
+
+    // Add User Secrets in development
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Configuration.AddUserSecrets<Program>(optional: true);
+        Log.Information("Development environment detected - User Secrets enabled");
+    }
+
+    // Validate configuration at startup - fail fast if configuration is invalid
+    Log.Information("Validating configuration...");
+    ConfigurationValidator.ValidateConfiguration(builder.Configuration);
+    Log.Information("Configuration validation successful");
+
     // Use Serilog
     builder.Host.UseSerilog();
 
-    // Database
-    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found");
+    // Database - Use typed configuration
+    var databaseSettings = new DatabaseSettings();
+    builder.Configuration.GetSection("Database").Bind(databaseSettings);
+    var connectionString = databaseSettings.BuildConnectionString();
 
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
         options.UseNpgsql(connectionString));
+
+    Log.Information("Database configured: {Host}:{Port}/{Database}",
+        databaseSettings.Host, databaseSettings.Port, databaseSettings.Database);
 
     // ASP.NET Core Identity
     builder.Services.AddIdentity<ApplicationUser, Role>(options =>
@@ -98,11 +124,13 @@ try
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
-    // JWT Authentication
-    var jwtAlgorithm = builder.Configuration["Jwt:Algorithm"] ?? "HS256";
-    var jwtKey = jwtAlgorithm == "HS256"
-        ? new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
-            builder.Configuration["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret is required")))
+    // JWT Authentication - Use typed configuration
+    var jwtSettings = new JwtSettings();
+    builder.Configuration.GetSection("Jwt").Bind(jwtSettings);
+    builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+
+    var jwtKey = jwtSettings.Algorithm == "HS256"
+        ? new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret))
         : null;
 
     builder.Services.AddAuthentication(options =>
@@ -121,8 +149,8 @@ try
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
             IssuerSigningKey = jwtKey,
             ClockSkew = TimeSpan.Zero
         };
@@ -142,39 +170,53 @@ try
         };
     });
 
+    Log.Information("JWT configured: Algorithm={Algorithm}, Issuer={Issuer}",
+        jwtSettings.Algorithm, jwtSettings.Issuer);
+
     builder.Services.AddAuthorization();
 
-    // Email Configuration and Service
+    // Configuration Models - Register as singletons for DI
+    builder.Services.Configure<DatabaseSettings>(builder.Configuration.GetSection("Database"));
+    builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"));
+    builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
+    builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMQ"));
     builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+    builder.Services.Configure<WebAuthnSettings>(builder.Configuration.GetSection("WebAuthn"));
+
+    // Email Service
     builder.Services.AddScoped<IEmailService, EmailService>();
 
     // SMS Service
     builder.Services.AddScoped<ISmsService, SmsService>();
 
-    // Distributed Cache (Redis) - for WebAuthn challenges and session storage
+    // Distributed Cache (Redis) - Use typed configuration
+    var redisSettings = new RedisSettings();
+    builder.Configuration.GetSection("Redis").Bind(redisSettings);
+
     builder.Services.AddStackExchangeRedisCache(options =>
     {
-        var redisConnection = builder.Configuration.GetSection("Redis:ConnectionString").Value
-            ?? throw new InvalidOperationException("Redis connection string is required");
-        options.Configuration = redisConnection;
-        options.InstanceName = "USP:";
+        options.Configuration = redisSettings.BuildConnectionString();
+        options.InstanceName = redisSettings.InstanceName;
     });
+
+    Log.Information("Redis configured: {Host}:{Port}", redisSettings.Host, redisSettings.Port);
 
     // HttpClient for external API calls (geolocation, etc.)
     builder.Services.AddHttpClient();
 
-    // WebAuthn/FIDO2 Configuration
-    builder.Services.Configure<WebAuthnSettings>(builder.Configuration.GetSection("WebAuthn"));
+    // WebAuthn/FIDO2 Configuration - Use typed configuration
+    var webAuthnSettings = new WebAuthnSettings();
+    builder.Configuration.GetSection("WebAuthn").Bind(webAuthnSettings);
+
     builder.Services.AddFido2(options =>
     {
-        var webAuthnSettings = builder.Configuration.GetSection("WebAuthn").Get<WebAuthnSettings>()
-            ?? throw new InvalidOperationException("WebAuthn configuration is required");
-
         options.ServerDomain = webAuthnSettings.RelyingPartyId;
         options.ServerName = webAuthnSettings.RelyingPartyName;
         options.Origins = new HashSet<string> { webAuthnSettings.Origin };
         options.TimestampDriftTolerance = webAuthnSettings.TimestampDriftTolerance;
     });
+
+    Log.Information("WebAuthn configured: RP={RelyingPartyId}", webAuthnSettings.RelyingPartyId);
 
     // Application Services
     builder.Services.AddScoped<IJwtService, JwtService>();
@@ -207,6 +249,8 @@ try
     builder.Services.AddScoped<IOAuth2Service, OAuth2Service>();
     builder.Services.AddScoped<IPasswordlessAuthService, PasswordlessAuthService>();
     builder.Services.AddScoped<IRiskAssessmentService, USP.Infrastructure.Services.Risk.RiskAssessmentService>();
+    builder.Services.AddScoped<ISamlService, SamlService>();
+    builder.Services.AddScoped<ILdapService, LdapService>();
 
     // Authorization Services
     builder.Services.AddScoped<IAbacEngine, AbacEngine>();
@@ -218,6 +262,8 @@ try
     builder.Services.AddSingleton<IShamirSecretSharing, ShamirSecretSharing>();
     builder.Services.AddSingleton<ISealManager, SealManager>();
     builder.Services.AddScoped<IKvEngine, KvEngine>();
+    builder.Services.AddScoped<ITransitEngine, TransitEngine>();
+    builder.Services.AddScoped<IPkiEngine, PkiEngine>();
 
     // FluentValidation
     builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();

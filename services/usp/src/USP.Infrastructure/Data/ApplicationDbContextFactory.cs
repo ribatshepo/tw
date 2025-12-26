@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
+using USP.Core.Models.Configuration;
 
 namespace USP.Infrastructure.Data;
 
@@ -14,10 +15,37 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
     {
         var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
 
-        // Use a simple connection string for design-time operations
-        // This will be replaced by actual configuration at runtime
-        var connectionString = Environment.GetEnvironmentVariable("DefaultConnection")
-            ?? "Host=localhost;Port=5432;Database=usp_db;Username=usp_user;Password=changeme";
+        // Load configuration from User Secrets and environment variables
+        // For migrations to work, you MUST set Database:Password in User Secrets:
+        // dotnet user-secrets set "Database:Password" "your-password"
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddUserSecrets<ApplicationDbContextFactory>(optional: true)
+            .AddEnvironmentVariables(prefix: "USP_")
+            .Build();
+
+        // Try to load connection string from configuration
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+        // If no connection string, build from Database settings
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            var dbSettings = new DatabaseSettings();
+            configuration.GetSection("Database").Bind(dbSettings);
+
+            // Validate that password is provided
+            if (string.IsNullOrWhiteSpace(dbSettings.Password))
+            {
+                throw new InvalidOperationException(
+                    "Database password is required for migrations. " +
+                    "Set it in User Secrets: dotnet user-secrets set \"Database:Password\" \"your-password\" " +
+                    "OR set environment variable: export USP_Database__Password=\"your-password\"");
+            }
+
+            connectionString = dbSettings.BuildConnectionString();
+        }
 
         optionsBuilder.UseNpgsql(connectionString);
 

@@ -1,5 +1,8 @@
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using Amazon;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -223,28 +226,48 @@ public class SmsService : ISmsService
 
     private async Task<bool> SendViaAwsSnsAsync(string phoneNumber, string message, bool isVoice)
     {
-        // Note: For production, use AWS SDK (Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceClient)
-        // This is a placeholder showing the general approach
+        if (isVoice)
+        {
+            _logger.LogWarning("AWS SNS does not support voice calls directly");
+            return false;
+        }
 
         try
         {
-            _logger.LogInformation("AWS SNS provider not fully implemented. Would send to {PhoneNumber}", MaskPhoneNumber(phoneNumber));
+            var awsRegion = _configuration["Sms:AwsSns:Region"] ?? Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1";
+            var awsAccessKeyId = _configuration["Sms:AwsSns:AccessKeyId"] ?? Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
+            var awsSecretAccessKey = _configuration["Sms:AwsSns:SecretAccessKey"] ?? Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
 
-            // TODO: Implement AWS SNS integration
-            // var snsClient = new AmazonSimpleNotificationServiceClient(region);
-            // var request = new PublishRequest
-            // {
-            //     PhoneNumber = phoneNumber,
-            //     Message = message
-            // };
-            // var response = await snsClient.PublishAsync(request);
+            if (string.IsNullOrEmpty(awsAccessKeyId) || string.IsNullOrEmpty(awsSecretAccessKey))
+            {
+                _logger.LogError("AWS SNS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables or configure in appsettings.json");
+                return false;
+            }
 
-            await Task.CompletedTask;
+            var regionEndpoint = RegionEndpoint.GetBySystemName(awsRegion);
+            using var snsClient = new AmazonSimpleNotificationServiceClient(awsAccessKeyId, awsSecretAccessKey, regionEndpoint);
+
+            var request = new PublishRequest
+            {
+                PhoneNumber = phoneNumber,
+                Message = message
+            };
+
+            var response = await snsClient.PublishAsync(request);
+
+            if (response.HttpStatusCode == System.Net.HttpStatusCode.OK)
+            {
+                _logger.LogInformation("SMS sent via AWS SNS to {PhoneNumber}, MessageId: {MessageId}",
+                    MaskPhoneNumber(phoneNumber), response.MessageId);
+                return true;
+            }
+
+            _logger.LogError("AWS SNS returned status code {StatusCode}", response.HttpStatusCode);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send SMS via AWS SNS");
+            _logger.LogError(ex, "Failed to send SMS via AWS SNS to {PhoneNumber}", MaskPhoneNumber(phoneNumber));
             return false;
         }
     }

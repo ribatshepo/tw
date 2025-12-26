@@ -87,43 +87,6 @@ public class MagicLink
 }
 
 /// <summary>
-/// SAML 2.0 identity provider configuration
-/// </summary>
-public class SamlIdentityProvider
-{
-    public Guid Id { get; set; }
-    public string EntityId { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string SingleSignOnUrl { get; set; } = string.Empty;
-    public string SingleLogoutUrl { get; set; } = string.Empty;
-    public string Certificate { get; set; } = string.Empty; // X.509 certificate
-    public string? MetadataUrl { get; set; }
-    public bool IsActive { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
-}
-
-/// <summary>
-/// LDAP server configuration
-/// </summary>
-public class LdapConfiguration
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string ServerUrl { get; set; } = string.Empty;
-    public int Port { get; set; } = 389;
-    public bool UseSsl { get; set; } = true;
-    public string BaseDn { get; set; } = string.Empty;
-    public string BindDn { get; set; } = string.Empty;
-    public string BindPassword { get; set; } = string.Empty; // Encrypted
-    public string UserSearchFilter { get; set; } = "(sAMAccountName={0})";
-    public string? GroupSearchFilter { get; set; }
-    public bool IsActive { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
-}
-
-/// <summary>
 /// Risk assessment log
 /// </summary>
 public class RiskAssessment

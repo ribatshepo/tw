@@ -462,7 +462,8 @@ public class WebhookService : IWebhookService
             // Apply custom payload template if configured
             if (!string.IsNullOrWhiteSpace(webhook.PayloadTemplate))
             {
-                // Simple template substitution (in production, use a proper template engine)
+                // Template substitution using string replacement
+                // Future enhancement: Integrate Liquid, Handlebars, or Scriban template engine
                 payload = webhook.PayloadTemplate
                     .Replace("{{payload}}", delivery.Payload)
                     .Replace("{{event_type}}", delivery.EventType)

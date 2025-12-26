@@ -2138,7 +2138,7 @@ The **Unified Security Platform** is a comprehensive, enterprise-grade security 
 - Advanced MFA with multiple delivery methods
 
 **Enterprise Secrets Management:**
-- Vault API compatible (native USP implementation)
+- Vault-compatible API
 - Multi-engine architecture (KV, Transit, PKI, Database, SSH)
 - Automated credential rotation
 - Cloud synchronization

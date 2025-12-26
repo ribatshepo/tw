@@ -243,8 +243,8 @@ public class AuditService : IAuditService
                 await ExportToJsonAsync(logs, exportPath);
                 break;
             case "PDF":
-                // PDF export would require a library like iTextSharp or QuestPDF
-                // For now, export as JSON and return path
+                // PDF export requires iTextSharp or QuestPDF library
+                // Fallback to JSON format until PDF library is integrated
                 await ExportToJsonAsync(logs, exportPath);
                 break;
             default:
