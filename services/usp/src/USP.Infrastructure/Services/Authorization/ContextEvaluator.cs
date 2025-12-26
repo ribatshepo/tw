@@ -14,9 +14,6 @@ public class ContextEvaluator : IContextEvaluator
     private readonly ApplicationDbContext _context;
     private readonly ILogger<ContextEvaluator> _logger;
 
-    // In-memory policy storage (in production, this would be a database table)
-    private static readonly List<ContextPolicy> _contextPolicies = new();
-
     public ContextEvaluator(
         ApplicationDbContext context,
         ILogger<ContextEvaluator> logger)
@@ -349,7 +346,7 @@ public class ContextEvaluator : IContextEvaluator
 
             if (userRiskProfile != null)
             {
-                riskScore += userRiskProfile.CurrentRiskScore ?? 0;
+                riskScore += userRiskProfile.CurrentRiskScore;
             }
 
             // Risk from device compliance
@@ -393,23 +390,23 @@ public class ContextEvaluator : IContextEvaluator
         }
     }
 
-    public Task<ContextPolicy?> GetContextPolicyAsync(string resourceType)
+    public async Task<ContextPolicy?> GetContextPolicyAsync(string resourceType)
     {
-        var policy = _contextPolicies
+        var entity = await _context.ContextPolicies
             .Where(p => p.IsActive &&
                        (p.ResourceType.Equals(resourceType, StringComparison.OrdinalIgnoreCase) ||
                         p.ResourceType == "*"))
             .OrderByDescending(p => p.ResourceType != "*") // Specific policies first
-            .FirstOrDefault();
+            .FirstOrDefaultAsync();
 
-        return Task.FromResult(policy);
+        return entity == null ? null : MapToDto(entity);
     }
 
     #region Public Management Methods
 
-    public Task<ContextPolicy> CreateContextPolicyAsync(CreateContextPolicyRequest request)
+    public async Task<ContextPolicy> CreateContextPolicyAsync(CreateContextPolicyRequest request)
     {
-        var policy = new ContextPolicy
+        var entity = new Core.Models.Entities.ContextPolicy
         {
             Id = Guid.NewGuid(),
             ResourceType = request.ResourceType,
@@ -433,14 +430,16 @@ public class ContextEvaluator : IContextEvaluator
             HighRiskThreshold = request.HighRiskThreshold,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            CreatedBy = Guid.Empty // TODO: Get from current user context
         };
 
-        _contextPolicies.Add(policy);
+        await _context.ContextPolicies.AddAsync(entity);
+        await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Created context policy for resource type {ResourceType}", policy.ResourceType);
+        _logger.LogInformation("Created context policy for resource type {ResourceType}", entity.ResourceType);
 
-        return Task.FromResult(policy);
+        return MapToDto(entity);
     }
 
     #endregion
@@ -453,6 +452,36 @@ public class ContextEvaluator : IContextEvaluator
                time.DayOfWeek != DayOfWeek.Sunday &&
                time.Hour >= 9 &&
                time.Hour < 17;
+    }
+
+    private static ContextPolicy MapToDto(Core.Models.Entities.ContextPolicy entity)
+    {
+        return new ContextPolicy
+        {
+            Id = entity.Id,
+            ResourceType = entity.ResourceType,
+            Action = entity.Action,
+            EnableTimeRestriction = entity.EnableTimeRestriction,
+            AllowedDaysOfWeek = entity.AllowedDaysOfWeek,
+            AllowedStartTime = entity.AllowedStartTime,
+            AllowedEndTime = entity.AllowedEndTime,
+            EnableLocationRestriction = entity.EnableLocationRestriction,
+            AllowedCountries = entity.AllowedCountries,
+            DeniedCountries = entity.DeniedCountries,
+            AllowedNetworkZones = entity.AllowedNetworkZones,
+            EnableDeviceRestriction = entity.EnableDeviceRestriction,
+            RequireCompliantDevice = entity.RequireCompliantDevice,
+            AllowedDeviceTypes = entity.AllowedDeviceTypes,
+            EnableRiskRestriction = entity.EnableRiskRestriction,
+            MaxAllowedRiskScore = entity.MaxAllowedRiskScore,
+            DenyImpossibleTravel = entity.DenyImpossibleTravel,
+            RequireMfaOnHighRisk = entity.RequireMfaOnHighRisk,
+            RequireApprovalOnHighRisk = entity.RequireApprovalOnHighRisk,
+            HighRiskThreshold = entity.HighRiskThreshold,
+            IsActive = entity.IsActive,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt
+        };
     }
 
     #endregion

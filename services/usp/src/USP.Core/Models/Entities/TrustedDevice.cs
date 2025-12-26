@@ -8,6 +8,7 @@ public class TrustedDevice
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public string DeviceFingerprint { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty; // Alias for DeviceFingerprint
     public string DeviceName { get; set; } = string.Empty;
     public string DeviceType { get; set; } = string.Empty;
     public string? IpAddress { get; set; }
@@ -23,6 +24,7 @@ public class TrustedDevice
     public DateTime? LastLocationUpdate { get; set; }
 
     public bool IsActive { get; set; } = true;
+    public bool IsTrusted { get; set; } = true; // Whether device is trusted
     public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastUsedAt { get; set; }
     public DateTime ExpiresAt { get; set; }

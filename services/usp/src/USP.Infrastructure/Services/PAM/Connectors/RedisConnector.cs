@@ -59,7 +59,8 @@ public class RedisConnector : BaseConnector
 
             // Check if ACL is supported (Redis 6+)
             var info = await server.InfoAsync("server");
-            var versionString = info.FirstOrDefault(x => x.Key == "redis_version").Value;
+            var versionString = info.SelectMany(group => group)
+                .FirstOrDefault(x => x.Key == "redis_version").Value;
 
             if (!string.IsNullOrEmpty(versionString))
             {
@@ -227,7 +228,7 @@ public class RedisConnector : BaseConnector
                 var server = redis.GetServer(redis.GetEndPoints().First());
                 var serverInfo = await server.InfoAsync("server");
 
-                foreach (var entry in serverInfo)
+                foreach (var entry in serverInfo.SelectMany(group => group))
                 {
                     info[entry.Key] = entry.Value;
                 }

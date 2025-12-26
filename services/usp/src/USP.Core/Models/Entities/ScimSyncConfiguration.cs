@@ -11,7 +11,15 @@ public class ScimSyncConfiguration
     public bool Enabled { get; set; } = true;
     public string Direction { get; set; } = "inbound"; // "inbound", "outbound", "bidirectional"
 
-    // Connection settings (stored as JSON)
+    // Connection settings
+    public string? ProviderUrl { get; set; }
+    public string? ApiKey { get; set; }
+    public string? ClientId { get; set; }
+    public string? ClientSecret { get; set; }
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+
+    // Additional connection settings (stored as JSON for extensibility)
     public string ConnectionSettings { get; set; } = "{}";
 
     // Sync schedule

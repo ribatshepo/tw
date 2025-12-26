@@ -215,6 +215,21 @@ try
     var webAuthnSettings = new WebAuthnSettings();
     builder.Configuration.GetSection("WebAuthn").Bind(webAuthnSettings);
 
+    // Validate WebAuthn configuration
+    if (string.IsNullOrEmpty(webAuthnSettings.RelyingPartyId) || string.IsNullOrEmpty(webAuthnSettings.Origin))
+    {
+        throw new InvalidOperationException(
+            "WebAuthn configuration is required. Set WebAuthn:RelyingPartyId and WebAuthn:Origin in appsettings.json");
+    }
+
+    // Validate non-localhost in production
+    if (builder.Environment.IsProduction() &&
+        (webAuthnSettings.RelyingPartyId.Contains("localhost") || webAuthnSettings.Origin.Contains("localhost")))
+    {
+        throw new InvalidOperationException(
+            "WebAuthn cannot use localhost in production. Configure production domain.");
+    }
+
     builder.Services.AddFido2(options =>
     {
         options.ServerDomain = webAuthnSettings.RelyingPartyId;
@@ -296,8 +311,21 @@ try
     {
         options.AddDefaultPolicy(policy =>
         {
-            var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-                ?? new[] { "http://localhost:3000" };
+            var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+
+            if (allowedOrigins == null || allowedOrigins.Length == 0)
+            {
+                if (builder.Environment.IsDevelopment())
+                {
+                    allowedOrigins = new[] { "http://localhost:3000", "http://localhost:5173" };
+                    Log.Warning("No CORS origins configured. Using default development origins: {Origins}", string.Join(", ", allowedOrigins));
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "CORS:AllowedOrigins must be configured in appsettings.json for production environments");
+                }
+            }
 
             policy.WithOrigins(allowedOrigins)
                   .AllowAnyMethod()
@@ -477,20 +505,27 @@ try
     });
 
     // Root endpoint
-    app.MapGet("/", () => new
+    app.MapGet("/", (HttpContext httpContext) =>
     {
-        service = "USP - Unified Security Platform",
-        version = "1.0.0",
-        status = "running",
-        endpoints = new
+        var metricsPort = app.Configuration["Kestrel:Endpoints:Metrics:Url"]?.Split(':').LastOrDefault() ?? "9090";
+        var scheme = httpContext.Request.Scheme;
+        var host = httpContext.Request.Host.Host;
+
+        return new
         {
-            swagger = "/swagger",
-            health = "/health",
-            healthLive = "/health/live",
-            healthReady = "/health/ready",
-            metrics = "http://localhost:9090/metrics",
-            auth = "/api/auth"
-        }
+            service = "USP - Unified Security Platform",
+            version = "1.0.0",
+            status = "running",
+            endpoints = new
+            {
+                swagger = "/swagger",
+                health = "/health",
+                healthLive = "/health/live",
+                healthReady = "/health/ready",
+                metrics = $"{scheme}://{host}:{metricsPort}/metrics",
+                auth = "/api/auth"
+            }
+        };
     })
     .WithName("GetServiceInfo")
     .WithTags("System")
@@ -512,7 +547,16 @@ try
 
     Log.Information("USP service started successfully");
     Log.Information("Environment: {Environment}", app.Environment.EnvironmentName);
-    Log.Information("Swagger UI: {SwaggerUrl}", app.Environment.IsDevelopment() ? "https://localhost:8443/swagger" : "disabled");
+
+    if (app.Environment.IsDevelopment())
+    {
+        var swaggerUrl = app.Configuration["Kestrel:Endpoints:Https:Url"]?.Replace("*", "localhost") ?? "https://localhost:8443";
+        Log.Information("Swagger UI: {SwaggerUrl}/swagger", swaggerUrl);
+    }
+    else
+    {
+        Log.Information("Swagger UI: disabled (production mode)");
+    }
 
     await app.RunAsync();
 }

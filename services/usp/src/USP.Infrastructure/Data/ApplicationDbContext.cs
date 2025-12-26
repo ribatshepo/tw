@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -9,12 +10,23 @@ namespace USP.Infrastructure.Data;
 /// <summary>
 /// Application database context for USP (Unified Security Platform)
 /// Maps to existing PostgreSQL schema in config/postgres/init-scripts/05-usp-schema.sql
+/// Supports multi-tenancy with automatic query filtering
 /// </summary>
 public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Guid, IdentityUserClaim<Guid>, UserRole, IdentityUserLogin<Guid>, IdentityRoleClaim<Guid>, IdentityUserToken<Guid>>
 {
+    private readonly IHttpContextAccessor? _httpContextAccessor;
+
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
+    }
+
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        IHttpContextAccessor httpContextAccessor)
+        : base(options)
+    {
+        _httpContextAccessor = httpContextAccessor;
     }
 
     // DbSets for entities
@@ -64,6 +76,20 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<DatabaseRole> DatabaseRoles { get; set; }
     public DbSet<DatabaseLease> DatabaseLeases { get; set; }
 
+    // Workspace/Multi-tenancy DbSets
+    public DbSet<USP.Core.Models.Entities.Workspace> Workspaces { get; set; }
+    public DbSet<WorkspaceMember> WorkspaceMembers { get; set; }
+    public DbSet<WorkspaceQuota> WorkspaceQuotas { get; set; }
+    public DbSet<WorkspaceUsage> WorkspaceUsages { get; set; }
+
+    // HIPAA Compliance DbSets
+    public DbSet<UserClearance> UserClearances { get; set; }
+    public DbSet<BusinessAssociateAgreement> BusinessAssociateAgreements { get; set; }
+
+    // Authorization Security DbSets
+    public DbSet<ColumnSecurityRule> ColumnSecurityRules { get; set; }
+    public DbSet<ContextPolicy> ContextPolicies { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -86,6 +112,23 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
         builder.ApplyConfiguration(new DatabaseConfigConfiguration());
         builder.ApplyConfiguration(new DatabaseRoleConfiguration());
         builder.ApplyConfiguration(new DatabaseLeaseConfiguration());
+
+        // Apply workspace configurations
+        builder.ApplyConfiguration(new WorkspaceConfiguration());
+        builder.ApplyConfiguration(new WorkspaceMemberConfiguration());
+        builder.ApplyConfiguration(new WorkspaceQuotaConfiguration());
+        builder.ApplyConfiguration(new WorkspaceUsageConfiguration());
+
+        // Apply HIPAA compliance configurations
+        builder.ApplyConfiguration(new UserClearanceConfiguration());
+        builder.ApplyConfiguration(new BusinessAssociateAgreementConfiguration());
+
+        // Apply authorization security configurations
+        builder.ApplyConfiguration(new ColumnSecurityRuleConfiguration());
+        builder.ApplyConfiguration(new ContextPolicyConfiguration());
+
+        // Apply global query filters for tenant isolation
+        ApplyTenantQueryFilters(builder);
 
         // Configure RolePermission
         builder.Entity<RolePermission>(entity =>
@@ -759,5 +802,52 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
         builder.Ignore<IdentityUserLogin<Guid>>();
         builder.Ignore<IdentityRoleClaim<Guid>>();
         builder.Ignore<IdentityUserToken<Guid>>();
+    }
+
+    /// <summary>
+    /// Apply global query filters for multi-tenancy
+    /// CRITICAL: Ensures all queries are automatically scoped to the current workspace
+    /// </summary>
+    private void ApplyTenantQueryFilters(ModelBuilder builder)
+    {
+        // Get all entity types that implement ITenantEntity
+        foreach (var entityType in builder.Model.GetEntityTypes())
+        {
+            if (typeof(ITenantEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                // Use reflection to call the generic SetTenantFilter method
+                var method = typeof(ApplicationDbContext)
+                    .GetMethod(nameof(SetTenantFilter), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.MakeGenericMethod(entityType.ClrType);
+
+                method?.Invoke(this, new object[] { builder });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Set tenant filter for a specific entity type
+    /// </summary>
+    private void SetTenantFilter<TEntity>(ModelBuilder builder) where TEntity : class, ITenantEntity
+    {
+        builder.Entity<TEntity>().HasQueryFilter(e =>
+            e.WorkspaceId == GetCurrentWorkspaceId());
+    }
+
+    /// <summary>
+    /// Get the current workspace ID from HttpContext
+    /// Returns Guid.Empty if no workspace is set (which will match nothing)
+    /// </summary>
+    private Guid GetCurrentWorkspaceId()
+    {
+        if (_httpContextAccessor?.HttpContext == null)
+        {
+            // No HTTP context available (e.g., background job, migration)
+            // Return Guid.Empty which will match nothing
+            return Guid.Empty;
+        }
+
+        var workspaceId = _httpContextAccessor.HttpContext.Items["WorkspaceId"] as Guid?;
+        return workspaceId ?? Guid.Empty;
     }
 }

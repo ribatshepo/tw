@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using USP.Core.Models.Configuration;
+using USP.Core.Services.ApiKey;
 
 namespace USP.Api.Middleware;
 
@@ -15,17 +16,20 @@ public class RequestSigningMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<RequestSigningMiddleware> _logger;
     private readonly RequestSigningSettings _settings;
+    private readonly IServiceProvider _serviceProvider;
 
     private const string NoncePrefix = "request:nonce:";
 
     public RequestSigningMiddleware(
         RequestDelegate next,
         ILogger<RequestSigningMiddleware> logger,
-        IOptions<RequestSigningSettings> settings)
+        IOptions<RequestSigningSettings> settings,
+        IServiceProvider serviceProvider)
     {
         _next = next;
         _logger = logger;
         _settings = settings.Value;
+        _serviceProvider = serviceProvider;
     }
 
     public async Task InvokeAsync(HttpContext context, IDistributedCache cache)
@@ -134,7 +138,6 @@ public class RequestSigningMiddleware
         try
         {
             // Get secret key for signature verification
-            // In production, retrieve from API key service or secrets manager
             var secret = await GetSigningSecretAsync(apiKeyId);
 
             if (string.IsNullOrEmpty(secret))
@@ -256,20 +259,31 @@ public class RequestSigningMiddleware
     /// </summary>
     private async Task<string> GetSigningSecretAsync(string? apiKeyId)
     {
-        // In production, retrieve from secure storage (API key service, secrets manager)
-        // For now, use a configuration value or environment variable
         if (string.IsNullOrEmpty(apiKeyId))
         {
-            // Use default signing secret
+            // Use default signing secret from configuration
             return Environment.GetEnvironmentVariable("USP_REQUEST_SIGNING_SECRET") ?? string.Empty;
         }
 
-        // TODO: Implement API key lookup to get specific signing secret
-        // var apiKey = await _apiKeyService.GetApiKeyAsync(apiKeyId);
-        // return apiKey?.SigningSecret;
+        // Retrieve API key with signing secret from database
+        using var scope = _serviceProvider.CreateScope();
+        var apiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyManagementService>();
 
-        await Task.CompletedTask;
-        return Environment.GetEnvironmentVariable($"USP_API_KEY_{apiKeyId}_SECRET") ?? string.Empty;
+        var apiKey = await apiKeyService.GetApiKeyAsync(apiKeyId);
+
+        if (apiKey == null)
+        {
+            _logger.LogWarning("API key {ApiKeyId} not found", apiKeyId);
+            return string.Empty;
+        }
+
+        if (!apiKey.IsActive)
+        {
+            _logger.LogWarning("API key {ApiKeyId} is inactive (revoked or expired)", apiKeyId);
+            return string.Empty;
+        }
+
+        return apiKey.SigningSecret ?? string.Empty;
     }
 
     /// <summary>

@@ -1,5 +1,4 @@
 using Elastic.Clients.Elasticsearch;
-using Elastic.Transport;
 using Microsoft.Extensions.Logging;
 
 namespace USP.Infrastructure.Services.Secrets.DatabaseConnectors;
@@ -22,8 +21,14 @@ public class ElasticsearchDatabaseConnector : BaseDatabaseConnector
     {
         try
         {
+            if (string.IsNullOrEmpty(password))
+            {
+                _logger.LogWarning("Elasticsearch password is required for authentication");
+                return false;
+            }
+
             var settings = new ElasticsearchClientSettings(new Uri(connectionUrl))
-                .Authentication(new BasicAuthentication(username ?? "elastic", password ?? "changeme"));
+                .Authentication(new Elastic.Transport.BasicAuthentication(username ?? "elastic", password));
 
             var client = new ElasticsearchClient(settings);
             var response = await client.PingAsync();
@@ -51,7 +56,7 @@ public class ElasticsearchDatabaseConnector : BaseDatabaseConnector
         try
         {
             var settings = new ElasticsearchClientSettings(new Uri(connectionUrl))
-                .Authentication(new BasicAuthentication(adminUsername, adminPassword));
+                .Authentication(new Elastic.Transport.BasicAuthentication(adminUsername, adminPassword));
 
             var client = new ElasticsearchClient(settings);
 
@@ -68,10 +73,18 @@ public class ElasticsearchDatabaseConnector : BaseDatabaseConnector
                 enabled = true
             };
 
-            var response = await client.Transport.RequestAsync<object>(
-                HttpMethod.Post,
-                $"/_security/user/{username}",
-                PostData.Serializable(createUserRequest));
+            // Use HttpClient for custom security endpoint (Elastic.Clients.Elasticsearch doesn't expose Security API directly)
+            using var httpClient = new System.Net.Http.HttpClient();
+            httpClient.BaseAddress = new Uri(connectionUrl);
+            var credentials = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{adminUsername}:{adminPassword}"));
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+
+            var jsonContent = new System.Net.Http.StringContent(
+                System.Text.Json.JsonSerializer.Serialize(createUserRequest),
+                System.Text.Encoding.UTF8,
+                "application/json"
+            );
+            var response = await httpClient.PostAsync($"/_security/user/{username}", jsonContent);
 
             _logger.LogInformation("Created Elasticsearch dynamic user: {Username}", username);
             return (username, password);
@@ -93,13 +106,15 @@ public class ElasticsearchDatabaseConnector : BaseDatabaseConnector
         try
         {
             var settings = new ElasticsearchClientSettings(new Uri(connectionUrl))
-                .Authentication(new BasicAuthentication(adminUsername, adminPassword));
+                .Authentication(new Elastic.Transport.BasicAuthentication(adminUsername, adminPassword));
 
-            var client = new ElasticsearchClient(settings);
+            // Use HttpClient for custom security endpoint
+            using var httpClient = new System.Net.Http.HttpClient();
+            httpClient.BaseAddress = new Uri(connectionUrl);
+            var credentials = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{adminUsername}:{adminPassword}"));
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
 
-            await client.Transport.RequestAsync<object>(
-                HttpMethod.Delete,
-                $"/_security/user/{username}");
+            var response = await httpClient.DeleteAsync($"/_security/user/{username}");
 
             _logger.LogInformation("Revoked Elasticsearch dynamic user: {Username}", username);
             return true;
@@ -120,16 +135,22 @@ public class ElasticsearchDatabaseConnector : BaseDatabaseConnector
         try
         {
             var settings = new ElasticsearchClientSettings(new Uri(connectionUrl))
-                .Authentication(new BasicAuthentication(currentUsername, currentPassword));
-
-            var client = new ElasticsearchClient(settings);
+                .Authentication(new Elastic.Transport.BasicAuthentication(currentUsername, currentPassword));
 
             var updatePasswordRequest = new { password = newPassword };
 
-            await client.Transport.RequestAsync<object>(
-                HttpMethod.Post,
-                $"/_security/user/{currentUsername}/_password",
-                PostData.Serializable(updatePasswordRequest));
+            // Use HttpClient for custom security endpoint
+            using var httpClient = new System.Net.Http.HttpClient();
+            httpClient.BaseAddress = new Uri(connectionUrl);
+            var credentials = Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes($"{currentUsername}:{currentPassword}"));
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+
+            var jsonContent = new System.Net.Http.StringContent(
+                System.Text.Json.JsonSerializer.Serialize(updatePasswordRequest),
+                System.Text.Encoding.UTF8,
+                "application/json"
+            );
+            var response = await httpClient.PostAsync($"/_security/user/{currentUsername}/_password", jsonContent);
 
             if (!await VerifyConnectionAsync(connectionUrl, currentUsername, newPassword))
             {

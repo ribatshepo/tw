@@ -46,13 +46,16 @@ public class SqlServerConnector : BaseConnector
             await using var connection = new SqlConnection(connectionString);
             await connection.OpenAsync();
 
-            // Escape single quotes in password
-            var escapedNewPassword = newPassword.Replace("'", "''");
-
-            // Execute ALTER LOGIN command to change password
-            var sql = $"ALTER LOGIN [{username}] WITH PASSWORD = '{escapedNewPassword}';";
+            // Use parameterized query to prevent SQL injection
+            // Note: SQL Server requires dynamic SQL for ALTER LOGIN with variable password
+            var sql = @"
+                DECLARE @sql NVARCHAR(MAX);
+                SET @sql = N'ALTER LOGIN [' + @username + N'] WITH PASSWORD = @password;';
+                EXEC sp_executesql @sql, N'@password NVARCHAR(128)', @password = @newPassword;";
 
             await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@username", username);
+            command.Parameters.AddWithValue("@newPassword", newPassword);
             await command.ExecuteNonQueryAsync();
 
             result.Success = true;

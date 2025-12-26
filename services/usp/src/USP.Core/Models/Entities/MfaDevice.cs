@@ -13,6 +13,7 @@ public class MfaDevice
     public bool IsActive { get; set; } = true;
     public bool IsPrimary { get; set; }
     public DateTime RegisteredAt { get; set; } = DateTime.UtcNow;
+    public DateTime EnrolledAt { get; set; } = DateTime.UtcNow; // Alias for RegisteredAt
     public DateTime? LastUsedAt { get; set; }
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }

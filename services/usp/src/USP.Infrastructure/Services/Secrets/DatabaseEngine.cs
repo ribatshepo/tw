@@ -499,11 +499,17 @@ public class DatabaseEngine : IDatabaseEngine
         };
     }
 
-    public async Task<RotateStaticCredentialsResponse> RotateStaticCredentialsAsync(string name, string roleName, Guid userId)
+    public Task<RotateStaticCredentialsResponse> RotateStaticCredentialsAsync(string name, string roleName, Guid userId)
     {
-        // This is a placeholder for static role credential rotation
-        // Implementation depends on specific use case
-        throw new NotImplementedException("Static credential rotation not yet implemented");
+        _logger.LogWarning(
+            "Static credential rotation requested for database '{DatabaseName}' role '{RoleName}' by user {UserId}, but this feature is not supported",
+            name, roleName, userId);
+
+        throw new NotSupportedException(
+            "Static credential rotation is not currently supported. " +
+            "Use dynamic credentials with automatic expiration (GenerateCredentialsAsync) instead. " +
+            "Dynamic credentials are automatically created, rotated, and revoked based on TTL settings. " +
+            "Static credential rotation requires database-specific password change plugins and will be available in a future release.");
     }
 
     // ============================================

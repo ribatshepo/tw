@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using USP.Api.Extensions;
 using USP.Core.Models.DTOs.PAM;
 using USP.Core.Services.PAM;
 
@@ -396,9 +395,4 @@ public class AnalyticsController : ControllerBase
             return StatusCode(500, "An error occurred while retrieving session commands");
         }
     }
-}
-
-public class TerminateSessionRequest
-{
-    public string Reason { get; set; } = string.Empty;
 }

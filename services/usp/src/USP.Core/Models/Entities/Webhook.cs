@@ -12,6 +12,7 @@ public class Webhook
     public string? Description { get; set; }
     public List<string> Events { get; set; } = new(); // user.created, secret.written, etc.
     public bool Active { get; set; } = true;
+    public bool IsActive { get; set; } = true; // Alias for Active
     public string AuthenticationType { get; set; } = "secret"; // secret, oauth2, mtls, none
     public string? SecretToken { get; set; } // HMAC secret
     public string? OAuth2ClientId { get; set; }
@@ -63,6 +64,8 @@ public class WebhookDelivery
     public int DurationMs { get; set; } = 0;
     public string? HmacSignature { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime AttemptedAt { get; set; } = DateTime.UtcNow; // Alias for CreatedAt
+    public bool Success { get; set; } = false; // Whether delivery was successful
     public DateTime? DeliveredAt { get; set; }
     public DateTime? NextRetryAt { get; set; }
 

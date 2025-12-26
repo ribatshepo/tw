@@ -1,4 +1,5 @@
 using System.Net;
+using MaxMind.GeoIP2;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using USP.Core.Models.Configuration;
@@ -267,25 +268,35 @@ public class IpFilteringMiddleware
         {
             if (!_settings.EnableGeoBlocking || string.IsNullOrEmpty(_settings.GeoIp2DatabasePath))
             {
+                _logger.LogDebug("Geo-blocking disabled or database path not configured");
                 return null;
             }
 
             // Check if database file exists
             if (!File.Exists(_settings.GeoIp2DatabasePath))
             {
-                _logger.LogWarning("GeoIP2 database not found at {Path}", _settings.GeoIp2DatabasePath);
+                _logger.LogError("GeoIP2 database not found at {Path}. Geo-blocking will not function.", _settings.GeoIp2DatabasePath);
                 return null;
             }
 
-            // In production, use MaxMind.GeoIP2 NuGet package
-            // For now, return null (geo-blocking will be skipped)
-            /*
-            using var reader = new MaxMind.GeoIP2.DatabaseReader(_settings.GeoIp2DatabasePath);
-            var response = reader.Country(ipAddress);
-            return response.Country.IsoCode;
-            */
+            // Parse IP address
+            if (!IPAddress.TryParse(ipAddress, out var ip))
+            {
+                _logger.LogWarning("Invalid IP address format for geo-lookup: {IpAddress}", ipAddress);
+                return null;
+            }
 
-            await Task.CompletedTask;
+            // Use MaxMind GeoIP2 to lookup country
+            await Task.CompletedTask; // Keep async signature
+            using var reader = new DatabaseReader(_settings.GeoIp2DatabasePath);
+            var response = reader.Country(ip);
+
+            _logger.LogDebug("IP {IpAddress} resolved to country {CountryCode}", ipAddress, response.Country.IsoCode);
+            return response.Country.IsoCode;
+        }
+        catch (MaxMind.GeoIP2.Exceptions.AddressNotFoundException)
+        {
+            _logger.LogWarning("IP address {IpAddress} not found in GeoIP2 database (likely private/internal IP)", ipAddress);
             return null;
         }
         catch (Exception ex)

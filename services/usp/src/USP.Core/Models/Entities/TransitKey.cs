@@ -13,6 +13,7 @@ public class TransitKey
     public int MinDecryptionVersion { get; set; } = 1; // Minimum version allowed for decryption
     public int MinEncryptionVersion { get; set; } = 1; // Minimum version for encryption (usually = LatestVersion)
     public bool DeletionAllowed { get; set; } = false; // Whether key can be deleted
+    public bool IsDeleted { get; set; } = false; // Whether key is deleted
     public bool Exportable { get; set; } = false; // Whether key can be exported
     public bool AllowPlaintextBackup { get; set; } = false; // Allow backup of plaintext key
     public bool ConvergentEncryption { get; set; } = false; // Same plaintext + context = same ciphertext

@@ -16,6 +16,7 @@ public class PrivilegedSafe
     public int MaxCheckoutDurationMinutes { get; set; } = 240; // 4 hours default
     public bool RotateOnCheckin { get; set; } = false;
     public bool SessionRecordingEnabled { get; set; } = false;
+    public bool IsActive { get; set; } = true;
     public string? Metadata { get; set; } // JSON: additional safe metadata
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
@@ -41,12 +42,15 @@ public class PrivilegedAccount
     public string? DatabaseName { get; set; } // For database accounts
     public string? ConnectionDetails { get; set; } // JSON: platform-specific connection details
     public string RotationPolicy { get; set; } = "manual"; // manual, on_checkout, scheduled, on_expiration
+    public bool RotationEnabled { get; set; } = false; // Whether automatic rotation is enabled
     public int RotationIntervalDays { get; set; } = 90;
     public DateTime? LastRotated { get; set; }
     public DateTime? NextRotation { get; set; }
     public string Status { get; set; } = "active"; // active, disabled, expired, rotation_pending
     public int? PasswordComplexity { get; set; } = 16; // Password length for rotation
     public bool RequireMfa { get; set; } = false;
+    public bool RequiresMfa { get; set; } = false; // Alias for RequireMfa
+    public bool RequiresDualApproval { get; set; } = false;
     public string? Metadata { get; set; } // JSON: additional account metadata
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
@@ -65,10 +69,12 @@ public class AccountCheckout
     public Guid AccountId { get; set; }
     public Guid UserId { get; set; }
     public DateTime CheckedOutAt { get; set; } = DateTime.UtcNow;
+    public DateTime CheckoutTime { get; set; } = DateTime.UtcNow; // Alias for CheckedOutAt
     public DateTime? CheckedInAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public string Reason { get; set; } = string.Empty; // Justification for checkout
     public Guid? ApprovalId { get; set; }
+    public bool ApprovalRequired { get; set; } = false; // Whether approval was required for this checkout
     public string Status { get; set; } = "active"; // active, expired, checked_in
     public bool RotateOnCheckin { get; set; } = false;
     public bool WasRotated { get; set; } = false;

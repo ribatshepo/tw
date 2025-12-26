@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using USP.Core.Models.Configuration;
 
 namespace USP.Api.Middleware;
@@ -14,6 +15,7 @@ public class RateLimitingMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<RateLimitingMiddleware> _logger;
     private readonly RateLimitingSettings _settings;
+    private readonly IConnectionMultiplexer? _redis;
 
     private const string RateLimitPrefix = "ratelimit:";
     private const string ViolationPrefix = "ratelimit:violations:";
@@ -22,11 +24,13 @@ public class RateLimitingMiddleware
     public RateLimitingMiddleware(
         RequestDelegate next,
         ILogger<RateLimitingMiddleware> logger,
-        IOptions<RateLimitingSettings> settings)
+        IOptions<RateLimitingSettings> settings,
+        IConnectionMultiplexer? redis = null)
     {
         _next = next;
         _logger = logger;
         _settings = settings.Value;
+        _redis = redis;
     }
 
     public async Task InvokeAsync(HttpContext context, IDistributedCache cache)
@@ -199,6 +203,16 @@ public class RateLimitingMiddleware
     /// </summary>
     private async Task<int> GetCurrentCountAsync(IDistributedCache cache, string key)
     {
+        // Use sliding window count if Redis is available and sliding window is enabled
+        if (_settings.UseSlidingWindow && _redis != null)
+        {
+            // Note: This is called before increment, so we check the sorted set
+            var db = _redis.GetDatabase();
+            var count = await db.SortedSetLengthAsync(key);
+            return (int)count;
+        }
+
+        // Otherwise use simple counter
         var value = await cache.GetStringAsync(key);
         return int.TryParse(value, out var count) ? count : 0;
     }
@@ -208,24 +222,10 @@ public class RateLimitingMiddleware
     /// </summary>
     private async Task IncrementCountAsync(IDistributedCache cache, string key, TimeSpan expiration)
     {
-        if (_settings.UseSlidingWindow)
+        if (_settings.UseSlidingWindow && _redis != null)
         {
-            // Sliding window: Use list of timestamps
-            var timestampKey = $"{key}:timestamps";
-            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var windowStart = now - (long)expiration.TotalSeconds;
-
-            // For simplicity, using counter-based approach
-            // In production, consider using Redis sorted sets for true sliding window
-            var currentCount = await GetCurrentCountAsync(cache, key);
-            var newCount = currentCount + 1;
-
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = expiration
-            };
-
-            await cache.SetStringAsync(key, newCount.ToString(), options);
+            // True sliding window using Redis sorted sets
+            await IncrementSlidingWindowAsync(key, expiration);
         }
         else
         {
@@ -240,6 +240,50 @@ public class RateLimitingMiddleware
 
             await cache.SetStringAsync(key, newCount.ToString(), options);
         }
+    }
+
+    /// <summary>
+    /// Implements true sliding window rate limiting using Redis sorted sets
+    /// </summary>
+    private async Task IncrementSlidingWindowAsync(string key, TimeSpan window)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var windowStart = now - (long)window.TotalMilliseconds;
+
+        var db = _redis!.GetDatabase();
+
+        // Remove old entries outside the window
+        await db.SortedSetRemoveRangeByScoreAsync(key, 0, windowStart);
+
+        // Add current request with timestamp as score
+        await db.SortedSetAddAsync(key, now.ToString(), now);
+
+        // Set expiration on the key
+        await db.KeyExpireAsync(key, window);
+    }
+
+    /// <summary>
+    /// Gets count for sliding window rate limit
+    /// </summary>
+    private async Task<int> GetSlidingWindowCountAsync(string key, TimeSpan window)
+    {
+        if (_redis == null)
+        {
+            return 0;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var windowStart = now - (long)window.TotalMilliseconds;
+
+        var db = _redis.GetDatabase();
+
+        // Remove old entries outside the window
+        await db.SortedSetRemoveRangeByScoreAsync(key, 0, windowStart);
+
+        // Count requests in current window
+        var count = await db.SortedSetLengthAsync(key);
+
+        return (int)count;
     }
 
     /// <summary>

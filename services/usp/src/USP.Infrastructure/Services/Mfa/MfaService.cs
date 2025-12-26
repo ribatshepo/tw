@@ -547,53 +547,12 @@ public class MfaService : IMfaService
 
     public async Task<bool> SendPushNotificationAsync(Guid userId, string message, string actionType = "approve")
     {
-        var user = await _userManager.FindByIdAsync(userId.ToString());
-        if (user == null)
-        {
-            return false;
-        }
-
-        // Check if push notification MFA device exists and is active
-        var pushDevice = await _context.MfaDevices
-            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "Push" && d.IsActive);
-
-        if (pushDevice == null)
-        {
-            _logger.LogWarning("No active push notification MFA device found for user {UserId}", userId);
-            return false;
-        }
-
-        try
-        {
-            // Generate push approval token
-            var approvalToken = GenerateMagicToken();
-
-            // Store push request in cache with expiration
-            var cacheKey = $"mfa:push:approval:{userId}";
-            _cache.Set(cacheKey, new
-            {
-                Token = approvalToken,
-                Message = message,
-                ActionType = actionType,
-                CreatedAt = DateTime.UtcNow
-            }, TimeSpan.FromMinutes(5));
-
-            // In a real implementation, this would send push notification via Firebase Cloud Messaging
-            // or Apple Push Notification Service
-            // For now, we'll simulate it
-            _logger.LogInformation("Push notification sent to user {UserId} with message: {Message}", userId, message);
-
-            // Update device last used timestamp
-            pushDevice.LastUsedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error sending push notification to user {UserId}", userId);
-            return false;
-        }
+        await Task.CompletedTask;
+        throw new NotSupportedException(
+            "Push notification MFA requires Firebase Cloud Messaging (FCM) or Apple Push Notification Service (APNS) configuration. " +
+            "Configure MfaSettings:PushNotificationProvider in appsettings.json. " +
+            "Supported providers: FCM, APNS. " +
+            "For implementation, install NuGet: FirebaseAdmin or ApnsDotNet.");
     }
 
     public async Task<bool> VerifyPushApprovalAsync(Guid userId, bool approved)
@@ -672,41 +631,11 @@ public class MfaService : IMfaService
 
     public async Task<bool> VerifyHardwareTokenAsync(Guid userId, string otp)
     {
-        var user = await _userManager.FindByIdAsync(userId.ToString());
-        if (user == null)
-        {
-            return false;
-        }
-
-        // Check if hardware token MFA device exists and is active
-        var tokenDevice = await _context.MfaDevices
-            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "HardwareToken" && d.IsActive);
-
-        if (tokenDevice == null)
-        {
-            _logger.LogWarning("No active hardware token MFA device found for user {UserId}", userId);
-            return false;
-        }
-
-        // In a real implementation, this would verify the OTP against YubiKey's validation server
-        // or verify HOTP/TOTP from hardware token
-        // For now, we'll use a simple length check (YubiKey OTP is typically 44 characters)
-        var isValid = otp.Length == 44 || (otp.Length >= 6 && otp.Length <= 8 && int.TryParse(otp, out _));
-
-        if (isValid)
-        {
-            // Update device last used timestamp
-            tokenDevice.LastUsedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation("Hardware token verified successfully for user {UserId}", userId);
-        }
-        else
-        {
-            _logger.LogWarning("Invalid hardware token OTP for user {UserId}", userId);
-        }
-
-        return isValid;
+        await Task.CompletedTask;
+        throw new NotSupportedException(
+            "YubiKey OTP validation requires Yubico API integration. " +
+            "Configure MfaSettings:YubicoClientId and MfaSettings:YubicoSecretKey in appsettings.json. " +
+            "Get credentials from: https://upgrade.yubico.com/getapikey/");
     }
 
     public async Task<bool> EnrollPushNotificationAsync(Guid userId, string deviceToken, string devicePlatform)

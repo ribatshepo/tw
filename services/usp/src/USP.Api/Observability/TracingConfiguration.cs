@@ -109,16 +109,17 @@ public static class TracingConfiguration
                             ScheduledDelayMilliseconds = 5000,
                             ExporterTimeoutMilliseconds = 30000,
                             MaxExportBatchSize = 512
-                        };
-                    })
-
+                            };
+                        });
+    
                     // Console exporter for development (optional)
-                    .AddConsoleExporter(options =>
+                    if (environment.IsDevelopment())
                     {
-                        options.Targets = environment.IsDevelopment()
-                            ? OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Debug
-                            : OpenTelemetry.Exporter.ConsoleExporterOutputTargets.None;
-                    });
+                        builder.AddConsoleExporter(options =>
+                        {
+                            options.Targets = OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Debug;
+                        });
+                    }
             });
 
         return services;

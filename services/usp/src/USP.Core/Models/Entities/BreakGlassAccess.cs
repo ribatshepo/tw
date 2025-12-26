@@ -8,6 +8,7 @@ public class BreakGlassAccess
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public string Reason { get; set; } = string.Empty; // Detailed emergency justification
+    public string Justification { get; set; } = string.Empty; // Alias for Reason
     public string IncidentType { get; set; } = string.Empty; // security_breach, system_outage, data_loss, etc.
     public string Severity { get; set; } = "critical"; // critical, high
     public DateTime ActivatedAt { get; set; } = DateTime.UtcNow;

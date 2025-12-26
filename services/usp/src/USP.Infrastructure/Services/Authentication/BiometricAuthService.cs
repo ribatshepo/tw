@@ -333,64 +333,11 @@ public class BiometricAuthService : IBiometricAuthService
         string ipAddress,
         string userAgent)
     {
-        try
-        {
-            // Try biometric first if provided
-            if (!string.IsNullOrEmpty(request.BiometricData))
-            {
-                // This would call the SDK to verify biometric
-                // For now, simplified implementation
-                _logger.LogInformation("Attempting biometric authentication for {Identifier}", request.Identifier);
-                // Implementation would be similar to AuthenticateWithBiometricAsync
-            }
-
-            // Fallback to PIN if biometric fails or not provided
-            if (!string.IsNullOrEmpty(request.PinCode))
-            {
-                _logger.LogInformation("Falling back to PIN authentication for {Identifier}", request.Identifier);
-
-                // Find user
-                var user = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Email == request.Identifier || u.UserName == request.Identifier);
-
-                if (user == null)
-                {
-                    return new BiometricAuthResponse
-                    {
-                        Success = false,
-                        ErrorMessage = "Invalid credentials"
-                    };
-                }
-
-                // For PIN verification, this would check against a stored hash
-                // This is a simplified implementation
-                var accessToken = _jwtService.GenerateAccessToken(user, new List<string>());
-                var refreshToken = GenerateRefreshToken();
-
-                return new BiometricAuthResponse
-                {
-                    Success = true,
-                    AccessToken = accessToken,
-                    RefreshToken = refreshToken,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(60)
-                };
-            }
-
-            return new BiometricAuthResponse
-            {
-                Success = false,
-                ErrorMessage = "Neither biometric nor PIN provided"
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during biometric/PIN authentication");
-            return new BiometricAuthResponse
-            {
-                Success = false,
-                ErrorMessage = "An error occurred during authentication"
-            };
-        }
+        await Task.CompletedTask;
+        throw new NotSupportedException(
+            "Biometric/PIN hybrid authentication requires integration with a certified biometric SDK and PIN storage mechanism. " +
+            "Configure BiometricSettings:SdkProvider in appsettings.json. " +
+            "For PIN authentication, implement secure PIN hashing and verification.");
     }
 
     public async Task<IEnumerable<BiometricDeviceDto>> GetUserBiometricsAsync(Guid userId)
@@ -529,8 +476,15 @@ public class BiometricAuthService : IBiometricAuthService
 
     private (string encryptedData, string iv) EncryptBiometricTemplate(string templateData)
     {
-        // Get encryption key from configuration (in production, use key management service)
-        var keyBase64 = _configuration["Biometric:EncryptionKey"] ?? GenerateDefaultKey();
+        var keyBase64 = _configuration["Biometric:EncryptionKey"];
+        if (string.IsNullOrEmpty(keyBase64))
+        {
+            throw new InvalidOperationException(
+                "Biometric encryption key not configured. " +
+                "Set Biometric:EncryptionKey in configuration or use Azure Key Vault/HSM. " +
+                "For development, generate a key with: dotnet user-secrets set \"Biometric:EncryptionKey\" \"$(openssl rand -base64 32)\"");
+        }
+
         var key = Convert.FromBase64String(keyBase64);
 
         using var aes = Aes.Create();
@@ -546,7 +500,15 @@ public class BiometricAuthService : IBiometricAuthService
 
     private string DecryptBiometricTemplate(string encryptedData, string iv)
     {
-        var keyBase64 = _configuration["Biometric:EncryptionKey"] ?? GenerateDefaultKey();
+        var keyBase64 = _configuration["Biometric:EncryptionKey"];
+        if (string.IsNullOrEmpty(keyBase64))
+        {
+            throw new InvalidOperationException(
+                "Biometric encryption key not configured. " +
+                "Set Biometric:EncryptionKey in configuration or use Azure Key Vault/HSM. " +
+                "For development, generate a key with: dotnet user-secrets set \"Biometric:EncryptionKey\" \"$(openssl rand -base64 32)\"");
+        }
+
         var key = Convert.FromBase64String(keyBase64);
 
         using var aes = Aes.Create();
@@ -564,79 +526,11 @@ public class BiometricAuthService : IBiometricAuthService
         BiometricTemplate storedBiometric,
         string providedTemplateData)
     {
-        try
-        {
-            // Decrypt stored template
-            var storedTemplate = DecryptBiometricTemplate(
-                storedBiometric.EncryptedTemplateData,
-                storedBiometric.EncryptionIv);
-
-            // In a real implementation, this would use a biometric SDK to compare templates
-            // For now, we'll use a simple hash comparison as a placeholder
-            var storedHash = ComputeHash(storedTemplate);
-            var providedHash = ComputeHash(providedTemplateData);
-
-            if (storedHash == providedHash)
-            {
-                return (true, 100); // Perfect match
-            }
-
-            // In real implementation, SDK would return similarity score
-            // This is a simplified fuzzy match
-            var similarity = ComputeSimilarity(storedTemplate, providedTemplateData);
-
-            return (similarity >= MinimumMatchThreshold, similarity);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in biometric verification");
-            return (false, 0);
-        }
-    }
-
-    private static string ComputeHash(string data)
-    {
-        using var sha256 = SHA256.Create();
-        var bytes = Encoding.UTF8.GetBytes(data);
-        var hash = sha256.ComputeHash(bytes);
-        return Convert.ToBase64String(hash);
-    }
-
-    private static int ComputeSimilarity(string template1, string template2)
-    {
-        // This is a placeholder - real implementation would use biometric SDK
-        // For demo purposes, using a simple length and prefix comparison
-        if (template1 == template2)
-        {
-            return 100;
-        }
-
-        var minLength = Math.Min(template1.Length, template2.Length);
-        var maxLength = Math.Max(template1.Length, template2.Length);
-
-        if (maxLength == 0)
-        {
-            return 0;
-        }
-
-        var matches = 0;
-        for (int i = 0; i < minLength; i++)
-        {
-            if (template1[i] == template2[i])
-            {
-                matches++;
-            }
-        }
-
-        return (int)((matches * 100.0) / maxLength);
-    }
-
-    private static string GenerateDefaultKey()
-    {
-        // Only for development - production should use proper key management
-        using var aes = Aes.Create();
-        aes.GenerateKey();
-        return Convert.ToBase64String(aes.Key);
+        await Task.CompletedTask;
+        throw new NotSupportedException(
+            "Biometric authentication requires integration with a certified biometric SDK. " +
+            "Configure BiometricSettings:SdkProvider in appsettings.json with one of: " +
+            "Neurotechnology, Innovatrics, or custom implementation implementing IBiometricVerifier interface.");
     }
 
     private static string GenerateRefreshToken()

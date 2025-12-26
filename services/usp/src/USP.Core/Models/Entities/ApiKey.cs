@@ -12,6 +12,7 @@ public class ApiKey
     public string KeyHash { get; set; } = string.Empty;
     public string KeyPrefix { get; set; } = string.Empty;
     public string[] Scopes { get; set; } = Array.Empty<string>();
+    public string? SigningSecret { get; set; }
 
     // Rate limiting
     public int? RateLimitPerMinute { get; set; }

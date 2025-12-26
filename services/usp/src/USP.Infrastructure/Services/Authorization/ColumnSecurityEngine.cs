@@ -15,9 +15,6 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
     private readonly ApplicationDbContext _context;
     private readonly ILogger<ColumnSecurityEngine> _logger;
 
-    // In-memory rule storage (in production, this would be a database table)
-    private static readonly List<ColumnSecurityRule> _columnRules = new();
-
     public ColumnSecurityEngine(
         ApplicationDbContext context,
         ILogger<ColumnSecurityEngine> logger)
@@ -43,12 +40,12 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
                 .ToListAsync();
 
             // Get applicable rules for this table
-            var rules = _columnRules
+            var rules = await _context.ColumnSecurityRules
                 .Where(r => r.IsActive &&
                            r.TableName.Equals(request.TableName, StringComparison.OrdinalIgnoreCase) &&
                            r.Operation.Equals(request.Operation, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(r => r.Priority)
-                .ToList();
+                .ToListAsync();
 
             foreach (var column in request.RequestedColumns)
             {
@@ -141,18 +138,18 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
         }
     }
 
-    public Task<List<ColumnSecurityRule>> GetColumnRulesAsync(string tableName)
+    public async Task<List<ColumnSecurityRule>> GetColumnRulesAsync(string tableName)
     {
-        var rules = _columnRules
+        var entityRules = await _context.ColumnSecurityRules
             .Where(r => r.TableName.Equals(tableName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+            .ToListAsync();
 
-        return Task.FromResult(rules);
+        return entityRules.Select(MapToDto).ToList();
     }
 
-    public Task<ColumnSecurityRule> CreateColumnRuleAsync(CreateColumnRuleRequest request)
+    public async Task<ColumnSecurityRule> CreateColumnRuleAsync(CreateColumnRuleRequest request)
     {
-        var rule = new ColumnSecurityRule
+        var entity = new Core.Models.Entities.ColumnSecurityRule
         {
             Id = Guid.NewGuid(),
             TableName = request.TableName,
@@ -166,31 +163,34 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
             Priority = request.Priority,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            CreatedBy = Guid.Empty // TODO: Get from current user context
         };
 
-        _columnRules.Add(rule);
+        await _context.ColumnSecurityRules.AddAsync(entity);
+        await _context.SaveChangesAsync();
 
         _logger.LogInformation("Created column security rule: {RuleId} for {TableName}.{ColumnName}",
-            rule.Id, rule.TableName, rule.ColumnName);
+            entity.Id, entity.TableName, entity.ColumnName);
 
-        return Task.FromResult(rule);
+        return MapToDto(entity);
     }
 
-    public Task<bool> DeleteColumnRuleAsync(Guid ruleId)
+    public async Task<bool> DeleteColumnRuleAsync(Guid ruleId)
     {
-        var rule = _columnRules.FirstOrDefault(r => r.Id == ruleId);
+        var rule = await _context.ColumnSecurityRules.FirstOrDefaultAsync(r => r.Id == ruleId);
 
         if (rule == null)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
-        _columnRules.Remove(rule);
+        _context.ColumnSecurityRules.Remove(rule);
+        await _context.SaveChangesAsync();
 
         _logger.LogInformation("Deleted column security rule: {RuleId}", ruleId);
 
-        return Task.FromResult(true);
+        return true;
     }
 
     public async Task<List<string>> GetAllowedColumnsAsync(Guid userId, string tableName, string operation)
@@ -201,11 +201,11 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
             .Select(ur => ur.Role.Name)
             .ToListAsync();
 
-        var rules = _columnRules
+        var rules = await _context.ColumnSecurityRules
             .Where(r => r.IsActive &&
                        r.TableName.Equals(tableName, StringComparison.OrdinalIgnoreCase) &&
                        r.Operation.Equals(operation, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+            .ToListAsync();
 
         var allowedColumns = new List<string>();
 
@@ -231,7 +231,7 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
 
     #region Private Helper Methods
 
-    private ColumnAccessDecision EvaluateColumnRules(List<ColumnSecurityRule> rules, List<string?> userRoles, string column)
+    private ColumnAccessDecision EvaluateColumnRules(List<Core.Models.Entities.ColumnSecurityRule> rules, List<string?> userRoles, string column)
     {
         // Default to allow if no rules
         if (!rules.Any())
@@ -293,7 +293,7 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
     private string MaskValue(string value, string column, string tableName)
     {
         // Get masking pattern from rule
-        var rule = _columnRules.FirstOrDefault(r =>
+        var rule = _context.ColumnSecurityRules.FirstOrDefault(r =>
             r.TableName.Equals(tableName, StringComparison.OrdinalIgnoreCase) &&
             r.ColumnName.Equals(column, StringComparison.OrdinalIgnoreCase) &&
             r.RestrictionType == "mask");
@@ -384,6 +384,26 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
         return $"TOK_{Convert.ToBase64String(hash)[..16]}";
     }
 
+    private static ColumnSecurityRule MapToDto(Core.Models.Entities.ColumnSecurityRule entity)
+    {
+        return new ColumnSecurityRule
+        {
+            Id = entity.Id,
+            TableName = entity.TableName,
+            ColumnName = entity.ColumnName,
+            Operation = entity.Operation,
+            RestrictionType = entity.RestrictionType,
+            MaskingPattern = entity.MaskingPattern,
+            AllowedRoles = entity.AllowedRoles,
+            DeniedRoles = entity.DeniedRoles,
+            Condition = entity.Condition,
+            Priority = entity.Priority,
+            IsActive = entity.IsActive,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt
+        };
+    }
+
     #endregion
 }
 
@@ -392,7 +412,7 @@ public class ColumnSecurityEngine : IColumnSecurityEngine
 internal class ColumnAccessDecision
 {
     public string RestrictionType { get; set; } = "deny";
-    public ColumnSecurityRule? Rule { get; set; }
+    public Core.Models.Entities.ColumnSecurityRule? Rule { get; set; }
     public string? MaskingPattern { get; set; }
 }
 

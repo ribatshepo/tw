@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using USP.Core.Models.Configuration;
+using USP.Core.Services.Audit;
 
 namespace USP.Api.Middleware;
 
@@ -16,17 +17,20 @@ public class ApiThreatProtectionMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<ApiThreatProtectionMiddleware> _logger;
     private readonly ApiThreatProtectionSettings _settings;
+    private readonly IServiceProvider _serviceProvider;
 
     private const string RapidRequestPrefix = "threat:rapid:";
 
     public ApiThreatProtectionMiddleware(
         RequestDelegate next,
         ILogger<ApiThreatProtectionMiddleware> logger,
-        IOptions<ApiThreatProtectionSettings> settings)
+        IOptions<ApiThreatProtectionSettings> settings,
+        IServiceProvider serviceProvider)
     {
         _next = next;
         _logger = logger;
         _settings = settings.Value;
+        _serviceProvider = serviceProvider;
     }
 
     public async Task InvokeAsync(HttpContext context, IDistributedCache cache)
@@ -303,15 +307,49 @@ public class ApiThreatProtectionMiddleware
     }
 
     /// <summary>
-    /// Logs detected threat to audit log
+    /// Logs detected threat to audit log and SIEM
     /// </summary>
     private async Task LogThreatAsync(string threatType, string? ipAddress, PathString path)
     {
         _logger.LogWarning("SECURITY THREAT DETECTED: Type={ThreatType}, IP={IpAddress}, Path={Path}",
             threatType, ipAddress ?? "unknown", path);
 
-        // In production, also log to security audit log / SIEM
-        await Task.CompletedTask;
+        // Log to SIEM via audit service
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var auditService = scope.ServiceProvider.GetRequiredService<IAuditService>();
+
+            await auditService.LogAsync(
+                userId: null, // No authenticated user for threat detection
+                action: "ThreatDetected",
+                resourceType: "SecurityEvent",
+                resourceId: Guid.NewGuid().ToString(),
+                oldValue: null,
+                newValue: new
+                {
+                    ThreatType = threatType,
+                    IpAddress = ipAddress ?? "unknown",
+                    Path = path.Value ?? string.Empty,
+                    Timestamp = DateTime.UtcNow,
+                    Severity = "High",
+                    Action = _settings.BlockOnThreatDetection ? "Blocked" : "Logged"
+                },
+                ipAddress: ipAddress,
+                userAgent: null,
+                status: "threat_detected",
+                errorMessage: null,
+                correlationId: auditService.GetCorrelationId()
+            );
+
+            _logger.LogInformation("Security threat logged to SIEM: {ThreatType} from {IpAddress} on {Path}",
+                threatType, ipAddress ?? "unknown", path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to log security threat to SIEM. Threat: {ThreatType}, IP: {IpAddress}",
+                threatType, ipAddress);
+        }
     }
 
     /// <summary>

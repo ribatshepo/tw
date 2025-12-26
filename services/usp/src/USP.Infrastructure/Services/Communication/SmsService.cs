@@ -6,6 +6,9 @@ using Amazon.SimpleNotificationService.Model;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Twilio;
+using Twilio.Rest.Api.V2010.Account;
+using Twilio.Types;
 using USP.Core.Services.Communication;
 
 namespace USP.Infrastructure.Services.Communication;
@@ -176,46 +179,40 @@ public class SmsService : ISmsService
 
             if (string.IsNullOrEmpty(accountSid) || string.IsNullOrEmpty(authToken) || string.IsNullOrEmpty(fromNumber))
             {
-                _logger.LogError("Twilio configuration is incomplete");
+                _logger.LogError("Twilio configuration is incomplete. Configure Sms:Twilio:AccountSid, Sms:Twilio:AuthToken, and Sms:Twilio:FromNumber in appsettings.json");
                 return false;
             }
 
-            // Note: For production, use Twilio SDK (Twilio.Rest.Api.V2010.Account.MessageResource.Create)
-            // This is a simplified implementation showing the HTTP approach
+            TwilioClient.Init(accountSid, authToken);
 
-            var client = _httpClientFactory.CreateClient();
-            var credentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{accountSid}:{authToken}"));
-            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-
-            var endpoint = isVoice
-                ? $"https://api.twilio.com/2010-04-01/Accounts/{accountSid}/Calls.json"
-                : $"https://api.twilio.com/2010-04-01/Accounts/{accountSid}/Messages.json";
-
-            var content = isVoice
-                ? new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("From", fromNumber),
-                    new KeyValuePair<string, string>("To", phoneNumber),
-                    new KeyValuePair<string, string>("Twiml", $"<Response><Say>{message}</Say></Response>")
-                })
-                : new FormUrlEncodedContent(new[]
-                {
-                    new KeyValuePair<string, string>("From", fromNumber),
-                    new KeyValuePair<string, string>("To", phoneNumber),
-                    new KeyValuePair<string, string>("Body", message)
-                });
-
-            var response = await client.PostAsync(endpoint, content);
-
-            if (response.IsSuccessStatusCode)
+            if (isVoice)
             {
-                _logger.LogInformation("SMS/Voice sent via Twilio to {PhoneNumber}", MaskPhoneNumber(phoneNumber));
-                return true;
-            }
+                var twiml = $"<Response><Say>{message}</Say></Response>";
+                var call = await CallResource.CreateAsync(
+                    to: new PhoneNumber(phoneNumber),
+                    from: new PhoneNumber(fromNumber),
+                    twiml: new Twilio.Types.Twiml(twiml)
+                );
 
-            var errorBody = await response.Content.ReadAsStringAsync();
-            _logger.LogError("Twilio API error: {StatusCode} - {Error}", response.StatusCode, errorBody);
-            return false;
+                _logger.LogInformation("Voice call initiated via Twilio to {PhoneNumber}, CallSid: {CallSid}",
+                    MaskPhoneNumber(phoneNumber), call.Sid);
+
+                return call.Status != CallResource.StatusEnum.Failed;
+            }
+            else
+            {
+                var messageResource = await MessageResource.CreateAsync(
+                    to: new PhoneNumber(phoneNumber),
+                    from: new PhoneNumber(fromNumber),
+                    body: message
+                );
+
+                _logger.LogInformation("SMS sent via Twilio to {PhoneNumber}, MessageSid: {MessageSid}",
+                    MaskPhoneNumber(phoneNumber), messageResource.Sid);
+
+                return messageResource.Status != MessageResource.StatusEnum.Failed
+                    && messageResource.Status != MessageResource.StatusEnum.Undelivered;
+            }
         }
         catch (Exception ex)
         {

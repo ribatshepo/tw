@@ -136,7 +136,6 @@ public class AbacEngine : IAbacEngine
             var user = await _context.Users
                 .Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role)
-                .Include(u => u.RiskProfile)
                 .FirstOrDefaultAsync(u => u.Id == request.UserId);
 
             if (user != null)
@@ -201,10 +200,10 @@ public class AbacEngine : IAbacEngine
                     { "location", location },
                     { "employment_type", employmentType },
 
-                    // Risk attributes
-                    { "risk_score", user.RiskProfile?.CurrentRiskScore ?? 0 },
-                    { "is_high_risk", (user.RiskProfile?.CurrentRiskScore ?? 0) > 70 },
-                    { "is_low_risk", (user.RiskProfile?.CurrentRiskScore ?? 0) < 30 },
+                    // Risk attributes (parse from JSON string)
+                    { "risk_score", ExtractRiskScoreFromProfile(user.RiskProfile) },
+                    { "is_high_risk", ExtractRiskScoreFromProfile(user.RiskProfile) > 70 },
+                    { "is_low_risk", ExtractRiskScoreFromProfile(user.RiskProfile) < 30 },
 
                     // Temporal attributes
                     { "created_at", user.CreatedAt },
@@ -467,18 +466,17 @@ public class AbacEngine : IAbacEngine
                         var owner = secret.CreatedBy.ToString();
                         var tags = new List<string>();
 
-                        if (!string.IsNullOrEmpty(secret.Metadata))
+                        if (secret.Metadata != null)
                         {
                             try
                             {
-                                var metadata = System.Text.Json.JsonDocument.Parse(secret.Metadata);
-                                if (metadata.RootElement.TryGetProperty("classification", out var classValue))
+                                if (secret.Metadata.RootElement.TryGetProperty("classification", out var classValue))
                                     classification = classValue.GetString() ?? "internal";
-                                if (metadata.RootElement.TryGetProperty("sensitivity", out var sensValue))
+                                if (secret.Metadata.RootElement.TryGetProperty("sensitivity", out var sensValue))
                                     sensitivityLevel = sensValue.GetString() ?? "medium";
-                                if (metadata.RootElement.TryGetProperty("owner", out var ownerValue))
+                                if (secret.Metadata.RootElement.TryGetProperty("owner", out var ownerValue))
                                     owner = ownerValue.GetString() ?? owner;
-                                if (metadata.RootElement.TryGetProperty("tags", out var tagsValue) && tagsValue.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                if (secret.Metadata.RootElement.TryGetProperty("tags", out var tagsValue) && tagsValue.ValueKind == JsonValueKind.Array)
                                 {
                                     tags = tagsValue.EnumerateArray().Select(t => t.GetString() ?? "").Where(t => !string.IsNullOrEmpty(t)).ToList();
                                 }
@@ -825,6 +823,37 @@ public class AbacEngine : IAbacEngine
 
         var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length > 1 ? parts[1] : "unknown";
+    }
+
+    private static int ExtractRiskScoreFromProfile(string? riskProfileJson)
+    {
+        if (string.IsNullOrEmpty(riskProfileJson))
+            return 0;
+
+        try
+        {
+            var doc = JsonDocument.Parse(riskProfileJson);
+            if (doc.RootElement.TryGetProperty("CurrentRiskScore", out var scoreElement))
+            {
+                return scoreElement.GetInt32();
+            }
+            // Try alternative property name
+            if (doc.RootElement.TryGetProperty("currentRiskScore", out scoreElement))
+            {
+                return scoreElement.GetInt32();
+            }
+            // Try alternative property name
+            if (doc.RootElement.TryGetProperty("risk_score", out scoreElement))
+            {
+                return scoreElement.GetInt32();
+            }
+        }
+        catch
+        {
+            // Ignore JSON parsing errors
+        }
+
+        return 0; // Default to 0 if parsing fails
     }
 
     #endregion

@@ -19,6 +19,8 @@ public class ApiKeyDto
     public int? RateLimitPerHour { get; set; }
     public int? RateLimitPerDay { get; set; }
     public int RequestCount { get; set; }
+    public string? SigningSecret { get; set; }
+    public bool IsActive { get; set; }
 }
 
 /// <summary>

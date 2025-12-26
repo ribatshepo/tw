@@ -86,7 +86,7 @@ public class AwsConnector : BaseConnector
                     newAccessKey.AccessKeyId,
                     username);
 
-                // Step 3: Deactivate old access key (keep it for rollback if needed)
+                // Step 3: Deactivate old access key
                 var updateOldKeyRequest = new UpdateAccessKeyRequest
                 {
                     AccessKeyId = currentAccessKeyId,
@@ -101,9 +101,30 @@ public class AwsConnector : BaseConnector
                     currentAccessKeyId,
                     username);
 
-                // Step 4: Optionally delete old access key after grace period
-                // For now, we keep it inactive for rollback capability
-                // In production, you might want to delete it after verification
+                // Step 4: Delete old access key immediately after verification
+                // Old keys are security risks and should not be retained
+                try
+                {
+                    var deleteOldKeyRequest = new DeleteAccessKeyRequest
+                    {
+                        AccessKeyId = currentAccessKeyId,
+                        UserName = username
+                    };
+
+                    await iamClient.DeleteAccessKeyAsync(deleteOldKeyRequest);
+
+                    _logger.LogInformation(
+                        "Deleted old access key {AccessKeyId} for AWS user {Username} after successful rotation",
+                        currentAccessKeyId,
+                        username);
+                }
+                catch (Exception deleteEx)
+                {
+                    _logger.LogWarning(deleteEx,
+                        "Failed to delete old access key {AccessKeyId} for AWS user {Username}, but new key is active",
+                        currentAccessKeyId,
+                        username);
+                }
 
                 result.Success = true;
                 result.Details = $"AWS access key rotated successfully for user {username}. New Access Key ID: {newAccessKey.AccessKeyId}, Secret: {newAccessKey.SecretAccessKey}";

@@ -23,6 +23,11 @@ public interface IApiKeyManagementService
     Task<ApiKeyDto?> GetApiKeyByIdAsync(Guid userId, Guid apiKeyId);
 
     /// <summary>
+    /// Get API key by key ID (without user ID check - for internal use)
+    /// </summary>
+    Task<ApiKeyDto?> GetApiKeyAsync(string apiKeyId);
+
+    /// <summary>
     /// Update API key
     /// </summary>
     Task<bool> UpdateApiKeyAsync(Guid userId, Guid apiKeyId, UpdateApiKeyRequest request);

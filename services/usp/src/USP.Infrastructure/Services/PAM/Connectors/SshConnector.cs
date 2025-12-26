@@ -94,7 +94,7 @@ public class SshConnector : BaseConnector
                 username,
                 hostAddress);
         }
-        catch (SshAuthenticationException ex)
+        catch (InvalidOperationException ex) when (ex.Message.Contains("auth") || ex.Message.Contains("password"))
         {
             result.ErrorMessage = "Authentication failed with current password";
             result.Details = $"SSH authentication failed: {ex.Message}";
@@ -104,7 +104,7 @@ public class SshConnector : BaseConnector
                 username,
                 hostAddress);
         }
-        catch (SshConnectionException ex)
+        catch (System.Net.Sockets.SocketException ex)
         {
             result.ErrorMessage = "Unable to connect to SSH server";
             result.Details = $"SSH connection failed: {ex.Message}";
@@ -171,7 +171,7 @@ public class SshConnector : BaseConnector
 
             return command.ExitStatus == 0;
         }
-        catch (SshAuthenticationException ex)
+        catch (InvalidOperationException ex) when (ex.Message.Contains("auth") || ex.Message.Contains("password"))
         {
             _logger.LogWarning(ex,
                 "Failed to verify credentials for SSH user {Username} on {Host}",
@@ -274,16 +274,20 @@ public class SshConnector : BaseConnector
             await Task.Run(() => chmodCommand.Execute());
 
             result.Success = true;
-            result.Details = $"SSH key rotated successfully for user {username} on {hostAddress}. Private key returned in rotation metadata.";
+            result.Details = $"SSH key rotated successfully for user {username} on {hostAddress}. Public key: {publicKey.Substring(0, Math.Min(50, publicKey.Length))}... Secure private key storage is the caller's responsibility.";
+            result.ErrorMessage = null;
 
             _logger.LogInformation(
-                "SSH key rotated successfully for user {Username} on {Host}",
+                "SSH key rotated successfully for user {Username} on {Host}, PublicKey: {PublicKeyPreview}",
                 username,
-                hostAddress);
+                hostAddress,
+                publicKey.Substring(0, Math.Min(50, publicKey.Length)));
 
-            // Store private key in result for retrieval
-            // In production, this should be encrypted and stored securely
-            result.ErrorMessage = privateKey; // Temporarily using ErrorMessage field for private key
+            _logger.LogWarning(
+                "SSH private key generated for {Username}@{Host} must be securely stored by caller using Transit encryption or secure secrets storage. Private key length: {KeyLength} characters",
+                username,
+                hostAddress,
+                privateKey.Length);
         }
         catch (Exception ex)
         {

@@ -10,12 +10,14 @@ public class PrivilegedSession
     public Guid AccountId { get; set; }
     public Guid UserId { get; set; }
     public DateTime StartTime { get; set; } = DateTime.UtcNow;
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow; // Alias for StartTime
     public DateTime? EndTime { get; set; }
     public string Protocol { get; set; } = string.Empty; // SSH, RDP, Database, Web
     public string Platform { get; set; } = string.Empty; // PostgreSQL, MySQL, Windows, Linux
     public string? HostAddress { get; set; }
     public int? Port { get; set; }
     public string? RecordingPath { get; set; } // Path to session recording file
+    public bool IsRecorded { get; set; } = false; // Whether session is being recorded
     public long RecordingSize { get; set; } = 0; // Size in bytes
     public string SessionType { get; set; } = string.Empty; // interactive, automated, query_only
     public int CommandCount { get; set; } = 0;

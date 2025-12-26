@@ -53,26 +53,50 @@ public class SqlServerDatabaseConnector : BaseDatabaseConnector
             await using var connection = new SqlConnection(connectionUrl);
             await connection.OpenAsync();
 
-            // Replace placeholders in creation statements
-            var statements = ReplacePlaceholders(creationStatements, username, password);
+            // Parse creation statements for roles/permissions
+            // Expected format: roles=db_datareader,db_datawriter or custom SQL
+            var roles = ParseSqlServerRoles(creationStatements);
 
-            // Execute creation statements
-            var sqlCommands = statements.Split(new[] { "GO", ";" }, StringSplitOptions.RemoveEmptyEntries);
+            // Create login using parameterized dynamic SQL
+            var createLoginSql = @"
+                DECLARE @sql NVARCHAR(MAX);
+                SET @sql = N'CREATE LOGIN [' + @username + N'] WITH PASSWORD = @password;';
+                EXEC sp_executesql @sql, N'@password NVARCHAR(128)', @password = @password;";
 
-            foreach (var sql in sqlCommands)
+            await using var createLoginCmd = new SqlCommand(createLoginSql, connection);
+            createLoginCmd.Parameters.AddWithValue("@username", username);
+            createLoginCmd.Parameters.AddWithValue("@password", password);
+            await createLoginCmd.ExecuteNonQueryAsync();
+
+            // Create user in current database using parameterized dynamic SQL
+            var createUserSql = @"
+                DECLARE @sql NVARCHAR(MAX);
+                SET @sql = N'CREATE USER [' + @username + N'] FOR LOGIN [' + @username + N'];';
+                EXEC sp_executesql @sql;";
+
+            await using var createUserCmd = new SqlCommand(createUserSql, connection);
+            createUserCmd.Parameters.AddWithValue("@username", username);
+            await createUserCmd.ExecuteNonQueryAsync();
+
+            // Grant roles using parameterized dynamic SQL
+            foreach (var role in roles)
             {
-                var trimmedSql = sql.Trim();
-                if (string.IsNullOrWhiteSpace(trimmedSql)) continue;
+                var grantRoleSql = @"
+                    DECLARE @sql NVARCHAR(MAX);
+                    SET @sql = N'ALTER ROLE [' + @role + N'] ADD MEMBER [' + @username + N'];';
+                    EXEC sp_executesql @sql;";
 
-                await using var command = new SqlCommand(trimmedSql, connection);
-                await command.ExecuteNonQueryAsync();
+                await using var grantRoleCmd = new SqlCommand(grantRoleSql, connection);
+                grantRoleCmd.Parameters.AddWithValue("@username", username);
+                grantRoleCmd.Parameters.AddWithValue("@role", role);
+                await grantRoleCmd.ExecuteNonQueryAsync();
             }
 
             // Verify user was created
             await using var verifyCmd = new SqlCommand(
                 "SELECT 1 FROM sys.database_principals WHERE name = @username",
                 connection);
-            verifyCmd.Parameters.AddWithValue("username", username);
+            verifyCmd.Parameters.AddWithValue("@username", username);
 
             var result = await verifyCmd.ExecuteScalarAsync();
             if (result == null)
@@ -80,7 +104,8 @@ public class SqlServerDatabaseConnector : BaseDatabaseConnector
                 throw new InvalidOperationException($"User {username} was not created successfully");
             }
 
-            _logger.LogInformation("Created SQL Server dynamic user: {Username}", username);
+            _logger.LogInformation("Created SQL Server dynamic user: {Username} with roles: {Roles}",
+                username, string.Join(", ", roles));
             return (username, password);
         }
         catch (Exception ex)
@@ -102,50 +127,46 @@ public class SqlServerDatabaseConnector : BaseDatabaseConnector
             await using var connection = new SqlConnection(connectionUrl);
             await connection.OpenAsync();
 
-            if (!string.IsNullOrWhiteSpace(revocationStatements))
+            // Kill active sessions for the user
+            var killSql = @"
+                DECLARE @kill NVARCHAR(MAX) = N'';
+                SELECT @kill = @kill + N'KILL ' + CAST(session_id AS NVARCHAR(10)) + N'; '
+                FROM sys.dm_exec_sessions
+                WHERE login_name = @username;
+                IF LEN(@kill) > 0
+                    EXEC sp_executesql @kill;";
+
+            await using var killCmd = new SqlCommand(killSql, connection);
+            killCmd.Parameters.AddWithValue("@username", username);
+
+            try
             {
-                // Use custom revocation statements
-                var statements = ReplacePlaceholders(revocationStatements, username, string.Empty);
-                var sqlCommands = statements.Split(new[] { "GO", ";" }, StringSplitOptions.RemoveEmptyEntries);
-
-                foreach (var sql in sqlCommands)
-                {
-                    var trimmedSql = sql.Trim();
-                    if (string.IsNullOrWhiteSpace(trimmedSql)) continue;
-
-                    await using var command = new SqlCommand(trimmedSql, connection);
-                    await command.ExecuteNonQueryAsync();
-                }
+                await killCmd.ExecuteNonQueryAsync();
             }
-            else
+            catch
             {
-                // Default revocation: kill sessions and drop user
-                await using var killCmd = new SqlCommand(
-                    @"DECLARE @kill VARCHAR(MAX) = '';
-                      SELECT @kill = @kill + 'KILL ' + CAST(session_id AS VARCHAR(10)) + '; '
-                      FROM sys.dm_exec_sessions
-                      WHERE login_name = @username;
-                      EXEC(@kill);",
-                    connection);
-                killCmd.Parameters.AddWithValue("username", username);
-
-                try
-                {
-                    await killCmd.ExecuteNonQueryAsync();
-                }
-                catch
-                {
-                    // Ignore errors killing sessions
-                }
-
-                // Drop user from database
-                await using var dropUserCmd = new SqlCommand($"DROP USER IF EXISTS [{username}];", connection);
-                await dropUserCmd.ExecuteNonQueryAsync();
-
-                // Drop login from server
-                await using var dropLoginCmd = new SqlCommand($"DROP LOGIN IF EXISTS [{username}];", connection);
-                await dropLoginCmd.ExecuteNonQueryAsync();
+                // Ignore errors killing sessions - user may not have active sessions
             }
+
+            // Drop user from database using parameterized dynamic SQL
+            var dropUserSql = @"
+                DECLARE @sql NVARCHAR(MAX);
+                SET @sql = N'DROP USER IF EXISTS [' + @username + N'];';
+                EXEC sp_executesql @sql;";
+
+            await using var dropUserCmd = new SqlCommand(dropUserSql, connection);
+            dropUserCmd.Parameters.AddWithValue("@username", username);
+            await dropUserCmd.ExecuteNonQueryAsync();
+
+            // Drop login from server using parameterized dynamic SQL
+            var dropLoginSql = @"
+                DECLARE @sql NVARCHAR(MAX);
+                SET @sql = N'DROP LOGIN IF EXISTS [' + @username + N'];';
+                EXEC sp_executesql @sql;";
+
+            await using var dropLoginCmd = new SqlCommand(dropLoginSql, connection);
+            dropLoginCmd.Parameters.AddWithValue("@username", username);
+            await dropLoginCmd.ExecuteNonQueryAsync();
 
             _logger.LogInformation("Revoked SQL Server dynamic user: {Username}", username);
             return true;
@@ -168,9 +189,16 @@ public class SqlServerDatabaseConnector : BaseDatabaseConnector
             await using var connection = new SqlConnection(connectionUrl);
             await connection.OpenAsync();
 
-            var sql = $"ALTER LOGIN [{currentUsername}] WITH PASSWORD = '{newPassword}';";
+            // Use parameterized query to prevent SQL injection
+            // Note: SQL Server requires dynamic SQL for ALTER LOGIN with variable password
+            var sql = @"
+                DECLARE @sql NVARCHAR(MAX);
+                SET @sql = N'ALTER LOGIN [' + @username + N'] WITH PASSWORD = @password;';
+                EXEC sp_executesql @sql, N'@password NVARCHAR(128)', @password = @newPassword;";
 
             await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@username", currentUsername);
+            command.Parameters.AddWithValue("@newPassword", newPassword);
             await command.ExecuteNonQueryAsync();
 
             // Verify new credentials work
@@ -188,5 +216,47 @@ public class SqlServerDatabaseConnector : BaseDatabaseConnector
             _logger.LogError(ex, "Failed to rotate SQL Server root credentials");
             throw new InvalidOperationException($"Failed to rotate root credentials: {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// Parse SQL Server roles from creation statements
+    /// </summary>
+    private string[] ParseSqlServerRoles(string creationStatements)
+    {
+        // Default to read-only role
+        var defaultRoles = new[] { "db_datareader" };
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(creationStatements))
+            {
+                return defaultRoles;
+            }
+
+            // Check for roles= format
+            if (creationStatements.Contains("roles=", StringComparison.OrdinalIgnoreCase))
+            {
+                var startIndex = creationStatements.IndexOf("roles=", StringComparison.OrdinalIgnoreCase) + 6;
+                var rolesString = creationStatements.Substring(startIndex);
+
+                // Take until first whitespace or semicolon
+                var endIndex = rolesString.IndexOfAny(new[] { ' ', '\t', '\n', '\r', ';' });
+                if (endIndex > 0)
+                {
+                    rolesString = rolesString.Substring(0, endIndex);
+                }
+
+                return rolesString.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(r => r.Trim())
+                    .Where(r => !string.IsNullOrWhiteSpace(r))
+                    .ToArray();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse SQL Server roles, using defaults");
+        }
+
+        return defaultRoles;
     }
 }

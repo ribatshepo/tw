@@ -12,7 +12,9 @@
     <PackageReference Include="Azure.Identity" Version="1.12.*" />
     <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.6.*" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="CassandraCSharpDriver" Version="3.22.0" />
     <PackageReference Include="Confluent.Kafka" Version="2.3.*" />
+    <PackageReference Include="Elastic.Clients.Elasticsearch" Version="9.2.2" />
     <PackageReference Include="Fido2" Version="3.0.*" />
     <PackageReference Include="Google.Cloud.SecretManager.V1" Version="2.4.*" />
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.*" />
@@ -40,6 +42,7 @@
     <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.1" />
     <PackageReference Include="Microsoft.ML" Version="3.0.*" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="3.0.*" />
+    <PackageReference Include="Twilio" Version="7.5.1" />
   </ItemGroup>
 
   <PropertyGroup>

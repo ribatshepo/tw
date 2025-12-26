@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using QRCoder;
 using USP.Core.Models.DTOs.Authentication;
@@ -22,6 +23,7 @@ public class PasswordlessAuthService : IPasswordlessAuthService
     private readonly IEmailService _emailService;
     private readonly ISmsService _smsService;
     private readonly IMemoryCache _cache;
+    private readonly IConfiguration _configuration;
 
     private const int MagicLinkExpirationMinutes = 15;
     private const int QrCodeExpirationMinutes = 5;
@@ -34,7 +36,8 @@ public class PasswordlessAuthService : IPasswordlessAuthService
         ILogger<PasswordlessAuthService> logger,
         IEmailService emailService,
         ISmsService smsService,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IConfiguration configuration)
     {
         _context = context;
         _jwtService = jwtService;
@@ -42,6 +45,7 @@ public class PasswordlessAuthService : IPasswordlessAuthService
         _emailService = emailService;
         _smsService = smsService;
         _cache = cache;
+        _configuration = configuration;
     }
 
     public async Task<PasswordlessAuthenticationResponse> SendMagicLinkAsync(PasswordlessAuthenticationRequest request)
@@ -83,7 +87,19 @@ public class PasswordlessAuthService : IPasswordlessAuthService
             _context.Set<MagicLink>().Add(magicLink);
             await _context.SaveChangesAsync();
 
-            var magicLinkUrl = $"{request.RedirectUrl ?? "https://localhost:8443"}/auth/magic-link/verify?token={token}";
+            // Get base URL from configuration or request
+            var baseUrl = request.RedirectUrl;
+            if (string.IsNullOrEmpty(baseUrl))
+            {
+                baseUrl = _configuration["Authentication:BaseUrl"];
+                if (string.IsNullOrEmpty(baseUrl))
+                {
+                    throw new InvalidOperationException(
+                        "Base URL required for magic links. Provide RedirectUrl in request or configure Authentication:BaseUrl in appsettings.json");
+                }
+            }
+
+            var magicLinkUrl = $"{baseUrl.TrimEnd('/')}/auth/magic-link/verify?token={token}";
 
             var emailSent = await _emailService.SendMagicLinkAsync(
                 user.Email ?? string.Empty,
@@ -333,8 +349,19 @@ public class PasswordlessAuthService : IPasswordlessAuthService
             _context.Set<MagicLink>().Add(magicLink);
             await _context.SaveChangesAsync();
 
-            // Generate SMS link URL
-            var smsLinkUrl = $"{request.RedirectUrl ?? "https://localhost:8443"}/auth/sms-link/verify?token={token}";
+            // Get base URL from configuration or request
+            var baseUrl = request.RedirectUrl;
+            if (string.IsNullOrEmpty(baseUrl))
+            {
+                baseUrl = _configuration["Authentication:BaseUrl"];
+                if (string.IsNullOrEmpty(baseUrl))
+                {
+                    throw new InvalidOperationException(
+                        "Base URL required for SMS links. Provide RedirectUrl in request or configure Authentication:BaseUrl in appsettings.json");
+                }
+            }
+
+            var smsLinkUrl = $"{baseUrl.TrimEnd('/')}/auth/sms-link/verify?token={token}";
 
             // Send SMS
             var smsMessage = $"Your login link (expires in {SmsLinkExpirationMinutes} minutes): {smsLinkUrl}";

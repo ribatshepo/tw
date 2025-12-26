@@ -19,8 +19,12 @@ public class ApplicationUser : IdentityUser<Guid>
 
     public int FailedLoginAttempts { get; set; }
     public DateTime? LastFailedLogin { get; set; }
+    public DateTime? LastLoginAt { get; set; }
     public DateTime? LockedUntil { get; set; }
     public DateTime? PasswordChangedAt { get; set; } = DateTime.UtcNow;
+    public bool IsActive { get; set; } = true;
+    public string? Metadata { get; set; } // JSON: additional user metadata
+    public string? RiskProfile { get; set; } // JSON: user risk assessment data
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

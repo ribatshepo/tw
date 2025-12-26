@@ -43,6 +43,7 @@ public class ApiKeyManagementService : IApiKeyManagementService
         var fullKey = GenerateApiKey(environment);
         var keyHash = HashApiKey(fullKey);
         var keyPrefix = ExtractKeyPrefix(fullKey);
+        var signingSecret = GenerateSigningSecret();
 
         var apiKey = new ApiKeyEntity
         {
@@ -53,6 +54,7 @@ public class ApiKeyManagementService : IApiKeyManagementService
             KeyHash = keyHash,
             KeyPrefix = keyPrefix,
             Scopes = request.Scopes.ToArray(),
+            SigningSecret = signingSecret,
             RateLimitPerMinute = request.RateLimitPerMinute,
             RateLimitPerHour = request.RateLimitPerHour,
             RateLimitPerDay = request.RateLimitPerDay,
@@ -92,6 +94,20 @@ public class ApiKeyManagementService : IApiKeyManagementService
     {
         var apiKey = await _context.ApiKeys
             .FirstOrDefaultAsync(k => k.Id == apiKeyId && k.UserId == userId);
+
+        return apiKey != null ? MapToDto(apiKey) : null;
+    }
+
+    public async Task<ApiKeyDto?> GetApiKeyAsync(string apiKeyId)
+    {
+        if (!Guid.TryParse(apiKeyId, out var guid))
+        {
+            _logger.LogWarning("Invalid API key ID format: {ApiKeyId}", apiKeyId);
+            return null;
+        }
+
+        var apiKey = await _context.ApiKeys
+            .FirstOrDefaultAsync(k => k.Id == guid);
 
         return apiKey != null ? MapToDto(apiKey) : null;
     }
@@ -386,6 +402,14 @@ public class ApiKeyManagementService : IApiKeyManagementService
         return $"...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))}";
     }
 
+    private static string GenerateSigningSecret()
+    {
+        var randomBytes = new byte[64]; // 512-bit secret
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(randomBytes);
+        return Convert.ToBase64String(randomBytes);
+    }
+
     private async Task<int> GetRateLimitCountAsync(string cacheKey)
     {
         var cachedValue = await _cache.GetStringAsync(cacheKey);
@@ -420,7 +444,9 @@ public class ApiKeyManagementService : IApiKeyManagementService
         RateLimitPerMinute = apiKey.RateLimitPerMinute,
         RateLimitPerHour = apiKey.RateLimitPerHour,
         RateLimitPerDay = apiKey.RateLimitPerDay,
-        RequestCount = apiKey.RequestCount
+        RequestCount = apiKey.RequestCount,
+        SigningSecret = apiKey.SigningSecret,
+        IsActive = !apiKey.Revoked && (!apiKey.ExpiresAt.HasValue || apiKey.ExpiresAt.Value > DateTime.UtcNow)
     };
 
     #endregion
