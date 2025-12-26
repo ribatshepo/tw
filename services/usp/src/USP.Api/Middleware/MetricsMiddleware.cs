@@ -36,7 +36,7 @@ public class MetricsMiddleware
         new Prometheus.HistogramConfiguration
         {
             LabelNames = new[] { "method", "endpoint" },
-            Buckets = new[] { 100, 1000, 10000, 100000, 1000000 }
+            Buckets = new[] { 100.0, 1000.0, 10000.0, 100000.0, 1000000.0 }
         });
 
     private static readonly Prometheus.Histogram ResponseSize = Prometheus.Metrics.CreateHistogram(
@@ -45,7 +45,7 @@ public class MetricsMiddleware
         new Prometheus.HistogramConfiguration
         {
             LabelNames = new[] { "method", "endpoint", "status_code" },
-            Buckets = new[] { 100, 1000, 10000, 100000, 1000000 }
+            Buckets = new[] { 100.0, 1000.0, 10000.0, 100000.0, 1000000.0 }
         });
 
     private static readonly Prometheus.Gauge ActiveRequests = Prometheus.Metrics.CreateGauge(

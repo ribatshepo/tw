@@ -208,8 +208,8 @@ public class RateLimitingMiddleware
         {
             // Note: This is called before increment, so we check the sorted set
             var db = _redis.GetDatabase();
-            var count = await db.SortedSetLengthAsync(key);
-            return (int)count;
+            var setLength = await db.SortedSetLengthAsync(key);
+            return (int)setLength;
         }
 
         // Otherwise use simple counter

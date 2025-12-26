@@ -293,7 +293,7 @@ public static class PrometheusMetrics
         "Duration of PAM sessions in seconds",
         new HistogramConfiguration
         {
-            Buckets = new[] { 60, 300, 600, 1800, 3600, 7200, 14400, 28800 }
+            Buckets = new[] { 60.0, 300.0, 600.0, 1800.0, 3600.0, 7200.0, 14400.0, 28800.0 }
         });
 
     /// <summary>

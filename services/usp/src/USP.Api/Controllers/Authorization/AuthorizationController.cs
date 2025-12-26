@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -926,14 +927,14 @@ public class AuthorizationController : ControllerBase
 
         try
         {
-            var policyDoc = System.Text.Json.JsonDocument.Parse(policy.Policy);
+            var policyDoc = JsonDocument.Parse(policy.Policy);
             var rules = policyDoc.RootElement.GetProperty("rules");
 
             foreach (var otherPolicy in otherPolicies.Where(p => p.PolicyType == "ABAC"))
             {
                 try
                 {
-                    var otherDoc = System.Text.Json.JsonDocument.Parse(otherPolicy.Policy);
+                    var otherDoc = JsonDocument.Parse(otherPolicy.Policy);
                     var otherRules = otherDoc.RootElement.GetProperty("rules");
 
                     // Check for overlapping rules with different effects

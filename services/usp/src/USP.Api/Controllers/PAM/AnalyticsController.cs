@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using USP.Core.Models.DTOs.PAM;
+using USP.Core.Services.Authentication;
 using USP.Core.Services.PAM;
 
 namespace USP.Api.Controllers.PAM;
@@ -15,15 +16,18 @@ public class AnalyticsController : ControllerBase
 {
     private readonly IAccessAnalyticsEngine _analyticsEngine;
     private readonly ISessionRecordingService _sessionService;
+    private readonly IJwtService _jwtService;
     private readonly ILogger<AnalyticsController> _logger;
 
     public AnalyticsController(
         IAccessAnalyticsEngine analyticsEngine,
         ISessionRecordingService sessionService,
+        IJwtService jwtService,
         ILogger<AnalyticsController> logger)
     {
         _analyticsEngine = analyticsEngine;
         _sessionService = sessionService;
+        _jwtService = jwtService;
         _logger = logger;
     }
 
@@ -38,8 +42,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var dormantAccounts = await _analyticsEngine.DetectDormantAccountsAsync(userId, dormantDays);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var dormantAccounts = await _analyticsEngine.DetectDormantAccountsAsync(userId.Value, dormantDays);
 
             _logger.LogInformation(
                 "User {UserId} retrieved {Count} dormant accounts",
@@ -66,8 +73,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var overPrivilegedAccounts = await _analyticsEngine.DetectOverPrivilegedAccountsAsync(userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var overPrivilegedAccounts = await _analyticsEngine.DetectOverPrivilegedAccountsAsync(userId.Value);
 
             _logger.LogInformation(
                 "User {UserId} retrieved {Count} over-privileged accounts",
@@ -97,8 +107,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var usagePattern = await _analyticsEngine.AnalyzeAccountUsageAsync(accountId, userId, daysToAnalyze);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var usagePattern = await _analyticsEngine.AnalyzeAccountUsageAsync(accountId, userId.Value, daysToAnalyze);
 
             _logger.LogInformation(
                 "User {UserId} retrieved usage pattern for account {AccountId}",
@@ -130,8 +143,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var anomalies = await _analyticsEngine.DetectAccessAnomaliesAsync(userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var anomalies = await _analyticsEngine.DetectAccessAnomaliesAsync(userId.Value);
 
             _logger.LogInformation(
                 "User {UserId} retrieved {Count} access anomalies",
@@ -158,8 +174,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var dashboard = await _analyticsEngine.GetComplianceDashboardAsync(userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var dashboard = await _analyticsEngine.GetComplianceDashboardAsync(userId.Value);
 
             _logger.LogInformation(
                 "User {UserId} retrieved compliance dashboard (score: {Score:F1}%)",
@@ -187,8 +206,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var riskScore = await _analyticsEngine.CalculateAccountRiskScoreAsync(accountId, userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var riskScore = await _analyticsEngine.CalculateAccountRiskScoreAsync(accountId, userId.Value);
 
             _logger.LogInformation(
                 "User {UserId} retrieved risk score for account {AccountId}: {Score}",
@@ -221,8 +243,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var highRiskAccounts = await _analyticsEngine.GetHighRiskAccountsAsync(userId, threshold);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var highRiskAccounts = await _analyticsEngine.GetHighRiskAccountsAsync(userId.Value, threshold);
 
             _logger.LogInformation(
                 "User {UserId} retrieved {Count} high-risk accounts (threshold: {Threshold})",
@@ -250,8 +275,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var violations = await _analyticsEngine.DetectCheckoutPolicyViolationsAsync(userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var violations = await _analyticsEngine.DetectCheckoutPolicyViolationsAsync(userId.Value);
 
             _logger.LogInformation(
                 "User {UserId} retrieved {Count} policy violations",
@@ -278,8 +306,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var summary = await _analyticsEngine.GetAnalyticsSummaryAsync(userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var summary = await _analyticsEngine.GetAnalyticsSummaryAsync(userId.Value);
 
             _logger.LogInformation(
                 "User {UserId} retrieved analytics summary",
@@ -306,8 +337,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var session = await _sessionService.GetSessionByIdAsync(sessionId, userId);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var session = await _sessionService.GetSessionByIdAsync(sessionId, userId.Value);
 
             if (session == null)
                 return NotFound("Session not found or access denied");
@@ -339,12 +373,14 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
 
             if (string.IsNullOrWhiteSpace(request.Reason))
                 return BadRequest("Termination reason is required");
 
-            var success = await _sessionService.TerminateSessionAsync(sessionId, userId, request.Reason);
+            var success = await _sessionService.TerminateSessionAsync(sessionId, userId.Value, request.Reason);
 
             if (!success)
                 return NotFound("Session not found or already terminated");
@@ -378,8 +414,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var userId = User.GetUserId();
-            var commands = await _sessionService.GetSessionCommandsAsync(sessionId, userId, limit);
+            var userId = _jwtService.GetUserIdFromClaims(User);
+            if (userId == null)
+                return Unauthorized("Invalid user claims");
+
+            var commands = await _sessionService.GetSessionCommandsAsync(sessionId, userId.Value, limit);
 
             _logger.LogInformation(
                 "User {UserId} retrieved {Count} commands for session {SessionId}",
