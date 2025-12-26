@@ -19,6 +19,8 @@ public class AuthorizationController : ControllerBase
     private readonly IAbacEngine _abacEngine;
     private readonly IHclPolicyEvaluator _hclEvaluator;
     private readonly IAuthorizationFlowService _flowService;
+    private readonly IColumnSecurityEngine _columnSecurityEngine;
+    private readonly IContextEvaluator _contextEvaluator;
     private readonly ApplicationDbContext _context;
     private readonly ILogger<AuthorizationController> _logger;
 
@@ -26,12 +28,16 @@ public class AuthorizationController : ControllerBase
         IAbacEngine abacEngine,
         IHclPolicyEvaluator hclEvaluator,
         IAuthorizationFlowService flowService,
+        IColumnSecurityEngine columnSecurityEngine,
+        IContextEvaluator contextEvaluator,
         ApplicationDbContext context,
         ILogger<AuthorizationController> logger)
     {
         _abacEngine = abacEngine;
         _hclEvaluator = hclEvaluator;
         _flowService = flowService;
+        _columnSecurityEngine = columnSecurityEngine;
+        _contextEvaluator = contextEvaluator;
         _context = context;
         _logger = logger;
     }
@@ -696,4 +702,323 @@ public class AuthorizationController : ControllerBase
     }
 
     #endregion
+
+    #region Batch Authorization Endpoints
+
+    /// <summary>
+    /// Perform batch authorization checks
+    /// </summary>
+    [HttpPost("check-batch")]
+    [Authorize]
+    [ProducesResponseType(typeof(List<BatchAuthorizationResult>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<List<BatchAuthorizationResult>>> CheckBatchAuthorization(
+        [FromBody] List<BatchAuthorizationRequest> requests)
+    {
+        try
+        {
+            var results = new List<BatchAuthorizationResult>();
+
+            foreach (var request in requests)
+            {
+                var abacRequest = new AbacEvaluationRequest
+                {
+                    SubjectId = request.UserId,
+                    Action = request.Action,
+                    ResourceType = request.ResourceType,
+                    ResourceId = request.ResourceId,
+                    Context = request.Context
+                };
+
+                var evaluation = await _abacEngine.EvaluateAsync(abacRequest);
+
+                results.Add(new BatchAuthorizationResult
+                {
+                    RequestId = request.RequestId,
+                    Allowed = evaluation.Allowed,
+                    Decision = evaluation.Decision,
+                    Reasons = evaluation.Reasons
+                });
+            }
+
+            return Ok(results);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error performing batch authorization");
+            return StatusCode(500, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Batch authorization error",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    #endregion
+
+    #region Column Security Endpoints
+
+    /// <summary>
+    /// Check column-level access
+    /// </summary>
+    [HttpPost("column-access/check")]
+    [Authorize]
+    [ProducesResponseType(typeof(ColumnAccessResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ColumnAccessResponse>> CheckColumnAccess([FromBody] ColumnAccessRequest request)
+    {
+        try
+        {
+            var result = await _columnSecurityEngine.CheckColumnAccessAsync(request);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking column access");
+            return StatusCode(500, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Column access check error",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Apply data masking to result set
+    /// </summary>
+    [HttpPost("column-access/mask")]
+    [Authorize]
+    [ProducesResponseType(typeof(Dictionary<string, object>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<Dictionary<string, object>>> ApplyMasking(
+        [FromQuery] Guid userId,
+        [FromQuery] string tableName,
+        [FromBody] Dictionary<string, object> data)
+    {
+        try
+        {
+            var result = await _columnSecurityEngine.ApplyMaskingAsync(userId, tableName, data);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error applying data masking");
+            return StatusCode(500, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Data masking error",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    #endregion
+
+    #region Context Evaluation Endpoints
+
+    /// <summary>
+    /// Evaluate context-based access decision
+    /// </summary>
+    [HttpPost("context/evaluate")]
+    [Authorize]
+    [ProducesResponseType(typeof(ContextEvaluationResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ContextEvaluationResponse>> EvaluateContext([FromBody] ContextEvaluationRequest request)
+    {
+        try
+        {
+            var result = await _contextEvaluator.EvaluateContextAsync(request);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error evaluating context");
+            return StatusCode(500, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Context evaluation error",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Calculate access risk score
+    /// </summary>
+    [HttpPost("context/risk-score")]
+    [Authorize]
+    [ProducesResponseType(typeof(int), StatusCodes.Status200OK)]
+    public async Task<ActionResult<int>> CalculateRiskScore([FromBody] ContextEvaluationRequest request)
+    {
+        try
+        {
+            var riskScore = await _contextEvaluator.CalculateAccessRiskScoreAsync(request);
+            return Ok(riskScore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating risk score");
+            return StatusCode(500, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Risk score calculation error",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    #endregion
+
+    #region Policy Conflict Detection
+
+    /// <summary>
+    /// Detect conflicts in policies
+    /// </summary>
+    [HttpGet("policies/{id:guid}/conflicts")]
+    [Authorize]
+    [ProducesResponseType(typeof(List<PolicyConflict>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<List<PolicyConflict>>> DetectPolicyConflicts(Guid id)
+    {
+        try
+        {
+            var policy = await _context.AccessPolicies.FindAsync(id);
+
+            if (policy == null)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Status = StatusCodes.Status404NotFound,
+                    Title = "Policy not found"
+                });
+            }
+
+            var allPolicies = await _context.AccessPolicies
+                .Where(p => p.IsActive && p.Id != id)
+                .ToListAsync();
+
+            var conflicts = DetectConflicts(policy, allPolicies);
+
+            return Ok(conflicts);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error detecting policy conflicts");
+            return StatusCode(500, new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "Conflict detection error",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    #endregion
+
+    #region Private Helper Methods
+
+    private List<PolicyConflict> DetectConflicts(Core.Models.Entities.AccessPolicy policy, List<Core.Models.Entities.AccessPolicy> otherPolicies)
+    {
+        var conflicts = new List<PolicyConflict>();
+
+        if (policy.PolicyType != "ABAC")
+        {
+            return conflicts; // Only check ABAC policies for now
+        }
+
+        try
+        {
+            var policyDoc = System.Text.Json.JsonDocument.Parse(policy.Policy);
+            var rules = policyDoc.RootElement.GetProperty("rules");
+
+            foreach (var otherPolicy in otherPolicies.Where(p => p.PolicyType == "ABAC"))
+            {
+                try
+                {
+                    var otherDoc = System.Text.Json.JsonDocument.Parse(otherPolicy.Policy);
+                    var otherRules = otherDoc.RootElement.GetProperty("rules");
+
+                    // Check for overlapping rules with different effects
+                    foreach (var rule in rules.EnumerateArray())
+                    {
+                        var action = rule.TryGetProperty("action", out var actionProp) ? actionProp.GetString() : "*";
+                        var resource = rule.TryGetProperty("resource", out var resProp) ? resProp.GetString() : "*";
+                        var effect = rule.TryGetProperty("effect", out var effProp) ? effProp.GetString() : "allow";
+
+                        foreach (var otherRule in otherRules.EnumerateArray())
+                        {
+                            var otherAction = otherRule.TryGetProperty("action", out var otherActionProp) ? otherActionProp.GetString() : "*";
+                            var otherResource = otherRule.TryGetProperty("resource", out var otherResProp) ? otherResProp.GetString() : "*";
+                            var otherEffect = otherRule.TryGetProperty("effect", out var otherEffProp) ? otherEffProp.GetString() : "allow";
+
+                            // Check for overlap
+                            if ((action == otherAction || action == "*" || otherAction == "*") &&
+                                (resource == otherResource || resource == "*" || otherResource == "*") &&
+                                effect != otherEffect)
+                            {
+                                conflicts.Add(new PolicyConflict
+                                {
+                                    ConflictingPolicyId = otherPolicy.Id,
+                                    ConflictingPolicyName = otherPolicy.Name,
+                                    ConflictType = "effect_mismatch",
+                                    Description = $"Policy '{policy.Name}' has effect '{effect}' while '{otherPolicy.Name}' has effect '{otherEffect}' for similar conditions",
+                                    Severity = "medium",
+                                    Resource = resource ?? "*",
+                                    Action = action ?? "*"
+                                });
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Skip policies that can't be parsed
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error parsing policy for conflict detection");
+        }
+
+        return conflicts;
+    }
+
+    #endregion
+}
+
+/// <summary>
+/// Batch authorization request
+/// </summary>
+public class BatchAuthorizationRequest
+{
+    public string RequestId { get; set; } = Guid.NewGuid().ToString();
+    public Guid UserId { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string ResourceType { get; set; } = string.Empty;
+    public string? ResourceId { get; set; }
+    public Dictionary<string, object>? Context { get; set; }
+}
+
+/// <summary>
+/// Batch authorization result
+/// </summary>
+public class BatchAuthorizationResult
+{
+    public string RequestId { get; set; } = string.Empty;
+    public bool Allowed { get; set; }
+    public string Decision { get; set; } = string.Empty;
+    public List<string> Reasons { get; set; } = new();
+}
+
+/// <summary>
+/// Policy conflict detection result
+/// </summary>
+public class PolicyConflict
+{
+    public Guid ConflictingPolicyId { get; set; }
+    public string ConflictingPolicyName { get; set; } = string.Empty;
+    public string ConflictType { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Severity { get; set; } = "low"; // low, medium, high
+    public string? Resource { get; set; }
+    public string? Action { get; set; }
 }

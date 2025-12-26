@@ -82,4 +82,29 @@ public interface IMfaService
     /// Send Voice OTP code for authentication
     /// </summary>
     Task<bool> SendVoiceOtpAsync(Guid userId);
+
+    /// <summary>
+    /// Send push notification for MFA approval
+    /// </summary>
+    Task<bool> SendPushNotificationAsync(Guid userId, string message, string actionType = "approve");
+
+    /// <summary>
+    /// Verify push notification approval
+    /// </summary>
+    Task<bool> VerifyPushApprovalAsync(Guid userId, bool approved);
+
+    /// <summary>
+    /// Enroll push notification MFA
+    /// </summary>
+    Task<bool> EnrollPushNotificationAsync(Guid userId, string deviceToken, string devicePlatform);
+
+    /// <summary>
+    /// Enroll hardware token (e.g., YubiKey) for MFA
+    /// </summary>
+    Task<bool> EnrollHardwareTokenAsync(Guid userId, string tokenSerial, string tokenType = "YubiKey");
+
+    /// <summary>
+    /// Verify hardware token OTP
+    /// </summary>
+    Task<bool> VerifyHardwareTokenAsync(Guid userId, string otp);
 }

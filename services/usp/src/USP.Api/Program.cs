@@ -43,6 +43,9 @@ using USP.Infrastructure.Services.PAM;
 using USP.Infrastructure.Services.Secrets;
 using USP.Infrastructure.Services.Session;
 using USP.Infrastructure.Services.Webhook;
+using USP.Api.Metrics;
+using USP.Api.Observability;
+using USP.Api.Health;
 
 // Build preliminary configuration for Serilog (before full configuration is built)
 var preliminaryConfig = new ConfigurationBuilder()
@@ -182,6 +185,10 @@ try
     builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMQ"));
     builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
     builder.Services.Configure<WebAuthnSettings>(builder.Configuration.GetSection("WebAuthn"));
+    builder.Services.Configure<RateLimitingSettings>(builder.Configuration.GetSection("RateLimiting"));
+    builder.Services.Configure<IpFilteringSettings>(builder.Configuration.GetSection("IpFiltering"));
+    builder.Services.Configure<RequestSigningSettings>(builder.Configuration.GetSection("RequestSigning"));
+    builder.Services.Configure<ApiThreatProtectionSettings>(builder.Configuration.GetSection("ApiThreatProtection"));
 
     // Email Service
     builder.Services.AddScoped<IEmailService, EmailService>();
@@ -243,6 +250,7 @@ try
     builder.Services.AddScoped<ISessionRecordingService, SessionRecordingService>();
     builder.Services.AddScoped<IJitAccessService, JitAccessService>();
     builder.Services.AddScoped<IBreakGlassService, BreakGlassService>();
+    builder.Services.AddScoped<IAccessAnalyticsEngine, AccessAnalyticsEngine>();
 
     // Advanced Authentication Services
     builder.Services.AddScoped<IWebAuthnService, WebAuthnService>();
@@ -268,6 +276,9 @@ try
     // FluentValidation
     builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();
     builder.Services.AddFluentValidationAutoValidation();
+
+    // OpenTelemetry Distributed Tracing
+    builder.Services.AddOpenTelemetryTracing(builder.Configuration, builder.Environment);
 
     // Controllers
     builder.Services.AddControllers();
@@ -295,9 +306,11 @@ try
         });
     });
 
-    // Health Checks
+    // Health Checks - Enhanced with custom health check
     builder.Services.AddHealthChecks()
         .AddNpgSql(connectionString, name: "postgresql", tags: new[] { "db", "postgresql" })
+        .AddRedis(redisSettings.BuildConnectionString(), name: "redis", tags: new[] { "cache", "redis" })
+        .AddCheck<DetailedHealthCheck>("detailed", tags: new[] { "detailed" })
         .AddCheck("self", () => Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy(), tags: new[] { "self" });
 
     // Swagger/OpenAPI
@@ -376,6 +389,9 @@ try
         };
     });
 
+    // Metrics middleware (before audit logging to track all requests)
+    app.UseMiddleware<MetricsMiddleware>();
+
     // Audit logging middleware
     app.UseMiddleware<AuditLoggingMiddleware>();
 
@@ -391,6 +407,15 @@ try
         await next();
     });
 
+    // IP filtering (before rate limiting)
+    app.UseIpFiltering();
+
+    // Rate limiting (critical for production)
+    app.UseRateLimiting();
+
+    // API threat protection
+    app.UseApiThreatProtection();
+
     app.UseHttpsRedirection();
 
     // Prometheus metrics
@@ -399,8 +424,14 @@ try
 
     app.UseCors();
 
+    // mTLS authentication (optional, for service-to-service)
+    app.UseMTlsAuthentication();
+
     // API key authentication middleware (before JWT authentication)
     app.UseApiKeyAuthentication();
+
+    // Request signing verification (optional, disabled by default)
+    app.UseRequestSigning();
 
     app.UseAuthentication();
     app.UseAuthorization();
@@ -472,6 +503,13 @@ try
         await roleService.InitializeBuiltInRolesAsync();
     }
 
+    // Initialize Prometheus metrics uptime counter
+    var appLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+    PrometheusMetrics.InitializeUptimeCounter(appLifetime.ApplicationStopping);
+
+    // Initialize seal status metric (assuming unsealed at startup)
+    PrometheusMetrics.UpdateSealStatus(true);
+
     Log.Information("USP service started successfully");
     Log.Information("Environment: {Environment}", app.Environment.EnvironmentName);
     Log.Information("Swagger UI: {SwaggerUrl}", app.Environment.IsDevelopment() ? "https://localhost:8443/swagger" : "disabled");
@@ -487,3 +525,6 @@ finally
 {
     await Log.CloseAndFlushAsync();
 }
+
+// Make Program class accessible for integration tests
+public partial class Program { }

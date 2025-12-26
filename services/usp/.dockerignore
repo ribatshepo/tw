@@ -1,0 +1,117 @@
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+**/publish/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userprefs
+*.userosscache
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+README.md
+LICENSE
+docs/
+
+# Tests (exclude from production build)
+**/*Tests/
+**/TestResults/
+**/*.trx
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+Jenkinsfile
+
+# Docker files (avoid copying Docker files into Docker)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Temporary files
+**/temp/
+**/tmp/
+**/.vs/
+**/logs/
+
+# NuGet packages (will be restored during build)
+packages/
+*.nupkg
+*.snupkg
+
+# User-specific files
+*.rsuser
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+*.cache
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# CodeRush
+.cr/personal
+
+# User Secrets (CRITICAL - never include in Docker images)
+secrets.json
+appsettings.Development.json
+appsettings.Local.json
+
+# Certificates and keys (use mounted volumes instead)
+*.pfx
+*.key
+*.crt
+*.pem
+certs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage reports
+coverage/
+*.coverage
+*.coveragexml
+
+# Benchmark results
+BenchmarkDotNet.Artifacts/

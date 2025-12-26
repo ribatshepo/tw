@@ -132,26 +132,84 @@ public class AbacEngine : IAbacEngine
 
         try
         {
-            // Extract subject (user) attributes
+            // Extract subject (user) attributes - comprehensive attribute extraction
             var user = await _context.Users
                 .Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role)
+                .Include(u => u.RiskProfile)
                 .FirstOrDefaultAsync(u => u.Id == request.UserId);
 
             if (user != null)
             {
+                // Determine department from metadata
+                var department = "unknown";
+                var clearanceLevel = "public";
+                var jobFunction = "user";
+                var location = "unknown";
+                var employmentType = "full-time";
+
+                if (!string.IsNullOrEmpty(user.Metadata))
+                {
+                    try
+                    {
+                        var metadata = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(user.Metadata);
+                        if (metadata != null)
+                        {
+                            if (metadata.TryGetValue("department", out var deptValue))
+                                department = deptValue?.ToString() ?? "unknown";
+                            if (metadata.TryGetValue("clearance_level", out var clearanceValue))
+                                clearanceLevel = clearanceValue?.ToString() ?? "public";
+                            if (metadata.TryGetValue("job_function", out var jobValue))
+                                jobFunction = jobValue?.ToString() ?? "user";
+                            if (metadata.TryGetValue("location", out var locValue))
+                                location = locValue?.ToString() ?? "unknown";
+                            if (metadata.TryGetValue("employment_type", out var empValue))
+                                employmentType = empValue?.ToString() ?? "full-time";
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore metadata parsing errors
+                    }
+                }
+
                 attributes.SubjectAttributes = new Dictionary<string, object>
                 {
+                    // Basic identity attributes
                     { "user_id", user.Id },
                     { "username", user.UserName ?? string.Empty },
                     { "email", user.Email ?? string.Empty },
                     { "status", user.Status },
                     { "is_active", user.Status == "active" },
+
+                    // Security attributes
                     { "mfa_enabled", user.MfaEnabled },
                     { "email_confirmed", user.EmailConfirmed },
-                    { "created_at", user.CreatedAt },
+                    { "phone_confirmed", user.PhoneNumberConfirmed },
+                    { "lockout_enabled", user.LockoutEnabled },
+                    { "is_locked_out", user.LockoutEnd.HasValue && user.LockoutEnd > DateTimeOffset.UtcNow },
+
+                    // Role attributes
                     { "roles", user.UserRoles.Select(ur => ur.Role.Name).ToList() },
-                    { "role_count", user.UserRoles.Count }
+                    { "role_count", user.UserRoles.Count },
+                    { "primary_role", user.UserRoles.FirstOrDefault()?.Role.Name ?? "User" },
+
+                    // Organizational attributes (from metadata)
+                    { "department", department },
+                    { "clearance_level", clearanceLevel },
+                    { "job_function", jobFunction },
+                    { "location", location },
+                    { "employment_type", employmentType },
+
+                    // Risk attributes
+                    { "risk_score", user.RiskProfile?.CurrentRiskScore ?? 0 },
+                    { "is_high_risk", (user.RiskProfile?.CurrentRiskScore ?? 0) > 70 },
+                    { "is_low_risk", (user.RiskProfile?.CurrentRiskScore ?? 0) < 30 },
+
+                    // Temporal attributes
+                    { "created_at", user.CreatedAt },
+                    { "last_login", user.LastLoginAt ?? DateTime.MinValue },
+                    { "account_age_days", (DateTime.UtcNow - user.CreatedAt).TotalDays }
                 };
             }
 
@@ -163,15 +221,58 @@ public class AbacEngine : IAbacEngine
                     request.ResourceId);
             }
 
-            // Extract environment attributes
+            // Extract environment attributes - comprehensive environment context
+            var now = DateTime.UtcNow;
+            var isBusinessHours = IsBusinessHours(now);
+            var isWeekend = now.DayOfWeek == DayOfWeek.Saturday || now.DayOfWeek == DayOfWeek.Sunday;
+
+            // Extract IP and geolocation from context if available
+            var ipAddress = request.AdditionalContext?.TryGetValue("ip_address", out var ipValue) == true
+                ? ipValue?.ToString() ?? "unknown"
+                : "unknown";
+            var userAgent = request.AdditionalContext?.TryGetValue("user_agent", out var uaValue) == true
+                ? uaValue?.ToString() ?? "unknown"
+                : "unknown";
+            var networkZone = request.AdditionalContext?.TryGetValue("network_zone", out var nzValue) == true
+                ? nzValue?.ToString() ?? "external"
+                : "external";
+            var deviceCompliance = request.AdditionalContext?.TryGetValue("device_compliance", out var dcValue) == true
+                ? dcValue?.ToString() ?? "unknown"
+                : "unknown";
+            var geoLocation = request.AdditionalContext?.TryGetValue("geo_location", out var geoValue) == true
+                ? geoValue?.ToString() ?? "unknown"
+                : "unknown";
+
             attributes.EnvironmentAttributes = new Dictionary<string, object>
             {
-                { "current_time", DateTime.UtcNow },
-                { "day_of_week", DateTime.UtcNow.DayOfWeek.ToString() },
-                { "hour_of_day", DateTime.UtcNow.Hour },
-                { "is_business_hours", IsBusinessHours(DateTime.UtcNow) },
+                // Time attributes
+                { "current_time", now },
+                { "day_of_week", now.DayOfWeek.ToString() },
+                { "hour_of_day", now.Hour },
+                { "is_business_hours", isBusinessHours },
+                { "is_weekend", isWeekend },
+                { "is_business_day", !isWeekend },
+                { "time_of_day", GetTimeOfDay(now.Hour) }, // morning, afternoon, evening, night
+
+                // Network attributes
+                { "ip_address", ipAddress },
+                { "network_zone", networkZone }, // "internal", "external", "vpn", "dmz"
+                { "is_internal_network", networkZone == "internal" || networkZone == "vpn" },
+
+                // Device attributes
+                { "user_agent", userAgent },
+                { "device_compliance_status", deviceCompliance }, // "compliant", "non-compliant", "unknown"
+                { "is_compliant_device", deviceCompliance == "compliant" },
+
+                // Location attributes
+                { "geo_location", geoLocation },
+                { "geo_country", ExtractCountryFromGeo(geoLocation) },
+                { "is_restricted_location", IsRestrictedLocation(geoLocation) },
+
+                // System attributes
                 { "server_timezone", TimeZoneInfo.Local.Id },
-                { "environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production" }
+                { "environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production" },
+                { "is_production", (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production") == "Production" }
             };
 
             // Extract context attributes
@@ -360,11 +461,44 @@ public class AbacEngine : IAbacEngine
                         .FirstOrDefaultAsync();
                     if (secret != null)
                     {
+                        // Determine classification from metadata or path
+                        var classification = "internal";
+                        var sensitivityLevel = "medium";
+                        var owner = secret.CreatedBy.ToString();
+                        var tags = new List<string>();
+
+                        if (!string.IsNullOrEmpty(secret.Metadata))
+                        {
+                            try
+                            {
+                                var metadata = System.Text.Json.JsonDocument.Parse(secret.Metadata);
+                                if (metadata.RootElement.TryGetProperty("classification", out var classValue))
+                                    classification = classValue.GetString() ?? "internal";
+                                if (metadata.RootElement.TryGetProperty("sensitivity", out var sensValue))
+                                    sensitivityLevel = sensValue.GetString() ?? "medium";
+                                if (metadata.RootElement.TryGetProperty("owner", out var ownerValue))
+                                    owner = ownerValue.GetString() ?? owner;
+                                if (metadata.RootElement.TryGetProperty("tags", out var tagsValue) && tagsValue.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                {
+                                    tags = tagsValue.EnumerateArray().Select(t => t.GetString() ?? "").Where(t => !string.IsNullOrEmpty(t)).ToList();
+                                }
+                            }
+                            catch { }
+                        }
+
                         attributes.Add("resource_id", secret.Id);
                         attributes.Add("path", secret.Path);
                         attributes.Add("version", secret.Version);
                         attributes.Add("created_by", secret.CreatedBy);
                         attributes.Add("is_deleted", secret.IsDeleted);
+                        attributes.Add("classification", classification); // public, internal, confidential, secret, top-secret
+                        attributes.Add("sensitivity_level", sensitivityLevel); // low, medium, high, critical
+                        attributes.Add("owner", owner);
+                        attributes.Add("department", ExtractDepartmentFromPath(secret.Path));
+                        attributes.Add("workspace", ExtractWorkspaceFromPath(secret.Path));
+                        attributes.Add("tags", tags);
+                        attributes.Add("lifecycle_stage", secret.IsDeleted ? "deleted" : "active");
+                        attributes.Add("age_days", (DateTime.UtcNow - secret.CreatedAt).TotalDays);
                     }
                     break;
 
@@ -635,6 +769,62 @@ public class AbacEngine : IAbacEngine
                time.DayOfWeek != DayOfWeek.Sunday &&
                time.Hour >= 9 &&
                time.Hour < 17;
+    }
+
+    private static string GetTimeOfDay(int hour)
+    {
+        return hour switch
+        {
+            >= 6 and < 12 => "morning",
+            >= 12 and < 17 => "afternoon",
+            >= 17 and < 21 => "evening",
+            _ => "night"
+        };
+    }
+
+    private static string ExtractCountryFromGeo(string geoLocation)
+    {
+        if (string.IsNullOrEmpty(geoLocation) || geoLocation == "unknown")
+            return "unknown";
+
+        // Format: "Country/City" or "Country"
+        var parts = geoLocation.Split('/');
+        return parts.Length > 0 ? parts[0] : "unknown";
+    }
+
+    private static bool IsRestrictedLocation(string geoLocation)
+    {
+        if (string.IsNullOrEmpty(geoLocation) || geoLocation == "unknown")
+            return false;
+
+        // Define restricted countries/locations
+        var restrictedLocations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "XX", "Unknown", "Anonymous"
+        };
+
+        var country = ExtractCountryFromGeo(geoLocation);
+        return restrictedLocations.Contains(country);
+    }
+
+    private static string ExtractDepartmentFromPath(string path)
+    {
+        // Format: "department/workspace/secret"
+        if (string.IsNullOrEmpty(path))
+            return "unknown";
+
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 ? parts[0] : "unknown";
+    }
+
+    private static string ExtractWorkspaceFromPath(string path)
+    {
+        // Format: "department/workspace/secret"
+        if (string.IsNullOrEmpty(path))
+            return "unknown";
+
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? parts[1] : "unknown";
     }
 
     #endregion

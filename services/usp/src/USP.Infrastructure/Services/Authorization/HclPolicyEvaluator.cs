@@ -21,6 +21,9 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
     private const string PolicyCacheKeyPrefix = "hcl:policy:";
     private const int PolicyCacheExpirationMinutes = 15;
 
+    // Template variable pattern: ${variable.property}
+    private static readonly Regex TemplateVarRegex = new(@"\$\{([^}]+)\}", RegexOptions.Compiled);
+
     // Supported capabilities
     private static readonly HashSet<string> ValidCapabilities = new()
     {
@@ -110,6 +113,9 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
                 return response;
             }
 
+            // Build template context for variable substitution
+            var templateContext = BuildTemplateContext(user, request);
+
             var roleIds = user.UserRoles.Select(ur => ur.RoleId).ToList();
 
             var policies = await _context.AccessPolicies
@@ -131,9 +137,12 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
 
                 foreach (var pathPolicy in hclPolicy.PathPolicies)
                 {
-                    if (PathMatches(request.Resource, pathPolicy.Path))
+                    // Apply template variable substitution
+                    var evaluatedPath = SubstituteTemplateVariables(pathPolicy.Path, templateContext);
+
+                    if (PathMatches(request.Resource, evaluatedPath))
                     {
-                        response.MatchedRules.Add($"{policyEntity.Name}:{pathPolicy.Path}");
+                        response.MatchedRules.Add($"{policyEntity.Name}:{evaluatedPath}");
 
                         if (pathPolicy.Capabilities.Contains("deny"))
                         {
@@ -553,6 +562,73 @@ public class HclPolicyEvaluator : IHclPolicyEvaluator
         using var sha256 = System.Security.Cryptography.SHA256.Create();
         var hash = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(hclText));
         return Convert.ToBase64String(hash).Substring(0, 16);
+    }
+
+    private Dictionary<string, string> BuildTemplateContext(Core.Models.Entities.ApplicationUser user, HclAuthorizationRequest request)
+    {
+        var context = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "user.id", user.Id.ToString() },
+            { "user.username", user.UserName ?? string.Empty },
+            { "user.email", user.Email ?? string.Empty },
+            { "resource.type", request.Resource.Split('/').FirstOrDefault() ?? string.Empty },
+            { "resource.path", request.Resource },
+            { "action", request.Action }
+        };
+
+        // Extract metadata fields if available
+        if (!string.IsNullOrEmpty(user.Metadata))
+        {
+            try
+            {
+                var metadata = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(user.Metadata);
+                if (metadata != null)
+                {
+                    if (metadata.TryGetValue("department", out var deptValue))
+                        context["user.department"] = deptValue?.ToString() ?? string.Empty;
+                    if (metadata.TryGetValue("location", out var locValue))
+                        context["user.location"] = locValue?.ToString() ?? string.Empty;
+                    if (metadata.TryGetValue("team", out var teamValue))
+                        context["user.team"] = teamValue?.ToString() ?? string.Empty;
+                }
+            }
+            catch { }
+        }
+
+        // Add primary role
+        var primaryRole = user.UserRoles.FirstOrDefault()?.Role.Name ?? "User";
+        context["user.role"] = primaryRole;
+
+        // Add request context if available
+        if (request.Context != null)
+        {
+            foreach (var (key, value) in request.Context)
+            {
+                context[$"context.{key}"] = value?.ToString() ?? string.Empty;
+            }
+        }
+
+        return context;
+    }
+
+    private string SubstituteTemplateVariables(string template, Dictionary<string, string> context)
+    {
+        if (string.IsNullOrEmpty(template))
+            return template;
+
+        var result = template;
+
+        // Find all template variables: ${variable.property}
+        var matches = TemplateVarRegex.Matches(template);
+
+        foreach (Match match in matches)
+        {
+            var varName = match.Groups[1].Value;
+            var varValue = context.TryGetValue(varName, out var value) ? value : match.Value;
+            result = result.Replace(match.Value, varValue);
+        }
+
+        return result;
     }
 
     #endregion

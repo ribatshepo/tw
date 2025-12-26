@@ -1,0 +1,213 @@
+version: '3.8'
+
+# USP (Unified Security Platform) - Production Environment
+# This docker-compose file is for production deployment reference
+# In production, use Kubernetes with Helm charts instead
+
+services:
+  # =============================================================================
+  # USP Service
+  # =============================================================================
+  usp:
+    build:
+      context: ../../
+      dockerfile: services/usp/Dockerfile
+      args:
+        BUILD_CONFIGURATION: Release
+        BUILD_VERSION: ${VERSION:-1.0.0}
+        BUILD_DATE: ${BUILD_DATE}
+        VCS_REF: ${VCS_REF}
+    image: ${REGISTRY:-localhost:5000}/usp:${VERSION:-1.0.0}
+    container_name: usp-prod
+    restart: always
+    ports:
+      - "8443:8443"   # HTTPS API
+      - "50005:50005" # gRPC
+      - "9090:9090"   # Prometheus metrics
+    environment:
+      # ASP.NET Core
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=https://+:8443;http://+:8080;https://+:50005
+      - ASPNETCORE_HTTPS_PORT=8443
+
+      # Database (use secrets management in production)
+      - Database__Host=${DB_HOST}
+      - Database__Port=${DB_PORT:-5432}
+      - Database__Database=${DB_NAME}
+      - Database__Username=${DB_USERNAME}
+      - Database__Password=${DB_PASSWORD}
+      - Database__MaxPoolSize=200
+      - Database__MinPoolSize=20
+      - Database__SslMode=Require
+
+      # Redis (use secrets management)
+      - Redis__Host=${REDIS_HOST}
+      - Redis__Port=${REDIS_PORT:-6379}
+      - Redis__Password=${REDIS_PASSWORD}
+      - Redis__UseSsl=true
+
+      # RabbitMQ (use secrets management)
+      - RabbitMQ__HostName=${RABBITMQ_HOST}
+      - RabbitMQ__Port=${RABBITMQ_PORT:-5671}
+      - RabbitMQ__UserName=${RABBITMQ_USERNAME}
+      - RabbitMQ__Password=${RABBITMQ_PASSWORD}
+      - RabbitMQ__VirtualHost=${RABBITMQ_VHOST:-/}
+      - RabbitMQ__UseSsl=true
+
+      # JWT (use secrets management - rotate regularly)
+      - Jwt__Secret=${JWT_SECRET}
+      - Jwt__Issuer=${JWT_ISSUER:-usp-prod}
+      - Jwt__Audience=${JWT_AUDIENCE:-usp-clients-prod}
+      - Jwt__Algorithm=RS256
+      - Jwt__AccessTokenExpirationMinutes=15
+      - Jwt__RefreshTokenExpirationDays=7
+
+      # Email
+      - Email__SmtpServer=${SMTP_SERVER}
+      - Email__SmtpPort=${SMTP_PORT:-587}
+      - Email__SmtpUsername=${SMTP_USERNAME}
+      - Email__SmtpPassword=${SMTP_PASSWORD}
+      - Email__FromEmail=${EMAIL_FROM}
+      - Email__FromName=${EMAIL_FROM_NAME:-USP}
+      - Email__UseSsl=true
+
+      # Observability
+      - Serilog__MinimumLevel__Default=Information
+      - Serilog__MinimumLevel__Override__Microsoft=Warning
+      - Serilog__MinimumLevel__Override__System=Warning
+      - Serilog__WriteTo__0__Name=Console
+      - Serilog__WriteTo__0__Args__outputTemplate=[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}
+      - Serilog__WriteTo__1__Name=Elasticsearch
+      - Serilog__WriteTo__1__Args__nodeUris=${ELASTICSEARCH_URL}
+      - Serilog__WriteTo__1__Args__indexFormat=usp-logs-{0:yyyy.MM}
+      - OpenTelemetry__JaegerEndpoint=${JAEGER_ENDPOINT}
+
+      # Security
+      - ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/app/certs/usp.pfx
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=${CERT_PASSWORD}
+
+      # Rate Limiting
+      - RateLimiting__EnableGlobalRateLimiting=true
+      - RateLimiting__PerUserRequestsPerMinute=100
+      - RateLimiting__PerIpRequestsPerMinute=200
+
+      # CORS (restrict to known origins in production)
+      - Cors__AllowedOrigins__0=${FRONTEND_URL}
+      - Cors__AllowCredentials=true
+    volumes:
+      - usp-logs:/app/logs
+      - ${CERT_PATH}:/app/certs:ro
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - usp-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+        labels: "service,env"
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  usp-logs:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  usp-network:
+    driver: bridge
+    name: usp-prod-network
+
+# =============================================================================
+# PRODUCTION DEPLOYMENT NOTES
+# =============================================================================
+#
+# 1. SECRETS MANAGEMENT:
+#    - Never commit secrets to version control
+#    - Use Docker secrets, Kubernetes secrets, or external secret managers (Azure Key Vault, AWS Secrets Manager, HashiCorp Vault)
+#    - Rotate secrets regularly (JWT keys: 180 days, DB passwords: 90 days)
+#
+# 2. TLS CERTIFICATES:
+#    - Use valid certificates from trusted CA (Let's Encrypt, DigiCert, etc.)
+#    - Mount certificates securely via volumes or Kubernetes secrets
+#    - Set certificate password via environment variable
+#    - Auto-renew certificates before expiration
+#
+# 3. DATABASE:
+#    - Use managed database services (Azure Database, AWS RDS, Google Cloud SQL)
+#    - Enable SSL/TLS for database connections
+#    - Use connection pooling (configured above)
+#    - Regular backups (automated, tested)
+#
+# 4. REDIS:
+#    - Use managed Redis services (Azure Cache, AWS ElastiCache, Google Memorystore)
+#    - Enable TLS for Redis connections
+#    - Configure persistence and backup
+#
+# 5. LOGGING & MONITORING:
+#    - Use centralized logging (ELK Stack, Splunk, Datadog)
+#    - Set up alerts for critical errors
+#    - Monitor performance metrics (CPU, memory, latency)
+#    - Configure log retention policies (7 years for audit logs)
+#
+# 6. SCALING:
+#    - Use Kubernetes for production orchestration
+#    - Configure HorizontalPodAutoscaler (scale 3-10 replicas)
+#    - Set resource requests and limits
+#    - Use load balancer for traffic distribution
+#
+# 7. SECURITY:
+#    - Run containers as non-root user (configured in Dockerfile)
+#    - Scan images for vulnerabilities (Trivy, Snyk, Docker Scout)
+#    - Enable network policies to restrict traffic
+#    - Use Web Application Firewall (WAF)
+#    - Enable rate limiting and DDoS protection
+#
+# 8. BACKUP & DISASTER RECOVERY:
+#    - Database: Daily automated backups, 30-day retention
+#    - Secrets: Secure backup of encryption keys
+#    - Configuration: Version control for all configs
+#    - Test recovery procedures quarterly
+#
+# 9. COMPLIANCE:
+#    - Ensure audit logs are tamper-proof
+#    - Retain audit logs for 7 years (SOC 2, HIPAA, PCI-DSS)
+#    - Encrypt data at rest and in transit
+#    - Regular compliance audits
+#
+# 10. CI/CD:
+#     - Automated builds on commit
+#     - Security scanning in pipeline
+#     - Automated testing (unit, integration, e2e)
+#     - Blue-green or canary deployments
+#     - Rollback capability
+#
+# =============================================================================

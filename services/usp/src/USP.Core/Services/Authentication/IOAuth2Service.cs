@@ -25,7 +25,7 @@ public interface IOAuth2Service
 }
 
 /// <summary>
-/// Passwordless authentication service (magic links)
+/// Passwordless authentication service (magic links, QR codes, SMS links)
 /// </summary>
 public interface IPasswordlessAuthService
 {
@@ -38,6 +38,21 @@ public interface IPasswordlessAuthService
     /// Verify magic link token and authenticate user
     /// </summary>
     Task<LoginResponse> VerifyMagicLinkAsync(VerifyMagicLinkRequest request);
+
+    /// <summary>
+    /// Generate QR code for passwordless authentication
+    /// </summary>
+    Task<QrCodeAuthResponse> GenerateQrCodeAsync(QrCodeAuthRequest request);
+
+    /// <summary>
+    /// Verify QR code scan and approve authentication
+    /// </summary>
+    Task<LoginResponse> VerifyQrCodeAsync(VerifyQrCodeRequest request);
+
+    /// <summary>
+    /// Send SMS authentication link to user's phone
+    /// </summary>
+    Task<SmsLinkAuthResponse> SendSmsLinkAsync(SmsLinkAuthRequest request);
 }
 
 /// <summary>

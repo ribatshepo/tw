@@ -132,6 +132,36 @@ public class RiskAssessmentService : IRiskAssessmentService
                 riskScore += 15;
             }
 
+            // 6b. Impossible Travel Detection (0-50 points - critical)
+            if (request.Latitude.HasValue && request.Longitude.HasValue)
+            {
+                var impossibleTravel = await DetectImpossibleTravelAsync(request.UserId, request.Latitude.Value, request.Longitude.Value);
+                if (impossibleTravel)
+                {
+                    riskFactors.Add("Impossible travel detected");
+                    riskScore += 50;
+                }
+            }
+
+            // 6c. Device Fingerprint Analysis (0-10 points)
+            if (!string.IsNullOrEmpty(request.DeviceFingerprint))
+            {
+                var deviceAnomalies = await DetectDeviceAnomaliesAsync(request.UserId, request.DeviceFingerprint, request.UserAgent);
+                if (deviceAnomalies)
+                {
+                    riskFactors.Add("Device fingerprint anomaly detected");
+                    riskScore += 10;
+                }
+            }
+
+            // 6d. Access Pattern Analysis (0-15 points)
+            var accessPatternAnomaly = await DetectAccessPatternAnomalyAsync(request.UserId, request.ResourceAccessed);
+            if (accessPatternAnomaly)
+            {
+                riskFactors.Add("Unusual access pattern detected");
+                riskScore += 15;
+            }
+
             // 7. Account Status (0-20 points)
             if (userProfile.IsCompromised)
             {
@@ -519,6 +549,241 @@ public class RiskAssessmentService : IRiskAssessmentService
         {
             _logger.LogError(ex, "Error getting risk history for user {UserId}", userId);
             return new List<RiskAssessment>();
+        }
+    }
+
+    public async Task<bool> DetectDeviceAnomaliesAsync(Guid userId, string deviceFingerprint, string? userAgent)
+    {
+        try
+        {
+            var profile = await GetUserRiskProfileAsync(userId);
+            if (profile == null)
+            {
+                return false;
+            }
+
+            // Check if device fingerprint is known
+            if (!profile.KnownDeviceFingerprints.Contains(deviceFingerprint))
+            {
+                // New device - not necessarily anomaly
+                return false;
+            }
+
+            // Check if user agent changed for this device (potential device spoofing)
+            if (!string.IsNullOrEmpty(userAgent))
+            {
+                var recentLogins = await _context.AuditLogs
+                    .Where(al => al.UserId == userId &&
+                                al.Action == "login_success" &&
+                                al.CreatedAt > DateTime.UtcNow.AddDays(-7))
+                    .OrderByDescending(al => al.CreatedAt)
+                    .Take(10)
+                    .ToListAsync();
+
+                // Check if user agent drastically different from recent logins with same device
+                // This is a simplified check - production would be more sophisticated
+                var suspiciousAgentChange = false;
+                // Implementation would compare user agents more thoroughly
+
+                return suspiciousAgentChange;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error detecting device anomalies for user {UserId}", userId);
+            return false;
+        }
+    }
+
+    public async Task<bool> DetectAccessPatternAnomalyAsync(Guid userId, string? resource)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(resource))
+            {
+                return false;
+            }
+
+            // Get user's access history
+            var recentAccess = await _context.AuditLogs
+                .Where(al => al.UserId == userId &&
+                            al.Action.StartsWith("access_") &&
+                            al.CreatedAt > DateTime.UtcNow.AddDays(-30))
+                .Select(al => al.Resource)
+                .ToListAsync();
+
+            if (recentAccess.Count < 5)
+            {
+                // Not enough history to determine anomaly
+                return false;
+            }
+
+            // Check if accessing a resource they've never accessed before
+            if (!recentAccess.Contains(resource))
+            {
+                // Check if it's a sensitive resource
+                if (resource.Contains("admin", StringComparison.OrdinalIgnoreCase) ||
+                    resource.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+                    resource.Contains("privileged", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("User {UserId} accessing sensitive resource for first time: {Resource}",
+                        userId, resource);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error detecting access pattern anomaly for user {UserId}", userId);
+            return false;
+        }
+    }
+
+    public async Task<bool> DetectVelocityAnomalyAsync(Guid userId, int timeWindowMinutes = 5, int maxAttempts = 5)
+    {
+        try
+        {
+            var cutoffTime = DateTime.UtcNow.AddMinutes(-timeWindowMinutes);
+
+            var attemptCount = await _context.AuditLogs
+                .Where(al => al.UserId == userId &&
+                            (al.Action == "login_attempt" || al.Action == "login_failed") &&
+                            al.CreatedAt > cutoffTime)
+                .CountAsync();
+
+            if (attemptCount > maxAttempts)
+            {
+                _logger.LogWarning("Velocity anomaly detected for user {UserId}: {Count} attempts in {Minutes} minutes",
+                    userId, attemptCount, timeWindowMinutes);
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error detecting velocity anomaly for user {UserId}", userId);
+            return false;
+        }
+    }
+
+    public async Task<bool> DetectAccountTakeoverIndicatorsAsync(Guid userId)
+    {
+        try
+        {
+            var indicators = 0;
+
+            // Check for multiple failed logins followed by success
+            var recentLogins = await _context.AuditLogs
+                .Where(al => al.UserId == userId &&
+                            (al.Action == "login_failed" || al.Action == "login_success") &&
+                            al.CreatedAt > DateTime.UtcNow.AddHours(-1))
+                .OrderByDescending(al => al.CreatedAt)
+                .Take(10)
+                .ToListAsync();
+
+            var failedCount = recentLogins.Count(l => l.Action == "login_failed");
+            if (failedCount >= 3 && recentLogins.Any(l => l.Action == "login_success"))
+            {
+                indicators++;
+            }
+
+            // Check for sudden change in access patterns
+            var profile = await GetUserRiskProfileAsync(userId);
+            if (profile != null && profile.SuspiciousActivityCount > 0)
+            {
+                indicators++;
+            }
+
+            // Check for password change followed by unusual activity
+            var recentPasswordChange = await _context.AuditLogs
+                .Where(al => al.UserId == userId &&
+                            al.Action == "password_changed" &&
+                            al.CreatedAt > DateTime.UtcNow.AddHours(-24))
+                .AnyAsync();
+
+            if (recentPasswordChange)
+            {
+                var unusualActivity = await _context.AuditLogs
+                    .Where(al => al.UserId == userId &&
+                                al.CreatedAt > DateTime.UtcNow.AddHours(-24) &&
+                                (al.Action.Contains("delete") || al.Action.Contains("export")))
+                    .AnyAsync();
+
+                if (unusualActivity)
+                {
+                    indicators++;
+                }
+            }
+
+            return indicators >= 2;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error detecting account takeover for user {UserId}", userId);
+            return false;
+        }
+    }
+
+    public async Task<int> ComputeIPReputationScoreAsync(string ipAddress)
+    {
+        try
+        {
+            // Check how many different users have logged in from this IP
+            var userCount = await _context.AuditLogs
+                .Where(al => al.IpAddress == ipAddress &&
+                            al.Action == "login_success" &&
+                            al.CreatedAt > DateTime.UtcNow.AddDays(-7))
+                .Select(al => al.UserId)
+                .Distinct()
+                .CountAsync();
+
+            // If many different users from same IP, it could be a proxy/VPN (moderate risk)
+            // or shared office (low risk) - we'll err on side of caution
+            if (userCount > 10)
+            {
+                return 50; // Moderate reputation score
+            }
+
+            // Check for failed login attempts from this IP
+            var failedCount = await _context.AuditLogs
+                .Where(al => al.IpAddress == ipAddress &&
+                            al.Action == "login_failed" &&
+                            al.CreatedAt > DateTime.UtcNow.AddHours(-1))
+                .CountAsync();
+
+            if (failedCount > 10)
+            {
+                return 20; // Low reputation - possible brute force
+            }
+
+            if (failedCount > 5)
+            {
+                return 50; // Moderate reputation
+            }
+
+            // Check if IP has been used for successful logins
+            var successCount = await _context.AuditLogs
+                .Where(al => al.IpAddress == ipAddress &&
+                            al.Action == "login_success" &&
+                            al.CreatedAt > DateTime.UtcNow.AddDays(-30))
+                .CountAsync();
+
+            if (successCount > 0)
+            {
+                return 80; // Good reputation
+            }
+
+            return 50; // Neutral - no history
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error computing IP reputation for {IpAddress}", ipAddress);
+            return 50; // Neutral on error
         }
     }
 

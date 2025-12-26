@@ -27,7 +27,13 @@ public class PasswordRotationService : IPasswordRotationService
         IAuditService auditService,
         ILogger<PasswordRotationService> logger,
         ILogger<PostgreSqlConnector> postgresLogger,
-        ILogger<MySqlPasswordConnector> mysqlLogger)
+        ILogger<MySqlPasswordConnector> mysqlLogger,
+        ILogger<MongoDbConnector> mongoLogger,
+        ILogger<RedisConnector> redisLogger,
+        ILogger<SqlServerConnector> sqlServerLogger,
+        ILogger<OracleConnector> oracleLogger,
+        ILogger<SshConnector> sshLogger,
+        ILogger<AwsConnector> awsLogger)
     {
         _context = context;
         _encryptionService = encryptionService;
@@ -39,7 +45,13 @@ public class PasswordRotationService : IPasswordRotationService
         _connectors = new Dictionary<string, ITargetSystemConnector>(StringComparer.OrdinalIgnoreCase)
         {
             { "PostgreSQL", new PostgreSqlConnector(postgresLogger) },
-            { "MySQL", new MySqlPasswordConnector(mysqlLogger) }
+            { "MySQL", new MySqlPasswordConnector(mysqlLogger) },
+            { "MongoDB", new MongoDbConnector(mongoLogger) },
+            { "Redis", new RedisConnector(redisLogger) },
+            { "SQLServer", new SqlServerConnector(sqlServerLogger) },
+            { "Oracle", new OracleConnector(oracleLogger) },
+            { "SSH", new SshConnector(sshLogger) },
+            { "AWS", new AwsConnector(awsLogger) }
         };
     }
 

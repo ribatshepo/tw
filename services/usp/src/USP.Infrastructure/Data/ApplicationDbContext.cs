@@ -60,6 +60,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<PkiCertificateAuthority> PkiCertificateAuthorities { get; set; }
     public DbSet<PkiRole> PkiRoles { get; set; }
     public DbSet<PkiIssuedCertificate> PkiIssuedCertificates { get; set; }
+    public DbSet<DatabaseConfig> DatabaseConfigs { get; set; }
+    public DbSet<DatabaseRole> DatabaseRoles { get; set; }
+    public DbSet<DatabaseLease> DatabaseLeases { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -80,6 +83,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
         builder.ApplyConfiguration(new PkiIssuedCertificateConfiguration());
         builder.ApplyConfiguration(new SamlIdentityProviderConfiguration());
         builder.ApplyConfiguration(new LdapConfigurationConfiguration());
+        builder.ApplyConfiguration(new DatabaseConfigConfiguration());
+        builder.ApplyConfiguration(new DatabaseRoleConfiguration());
+        builder.ApplyConfiguration(new DatabaseLeaseConfiguration());
 
         // Configure RolePermission
         builder.Entity<RolePermission>(entity =>

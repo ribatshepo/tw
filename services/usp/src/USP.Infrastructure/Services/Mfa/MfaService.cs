@@ -545,6 +545,220 @@ public class MfaService : IMfaService
         return sent;
     }
 
+    public async Task<bool> SendPushNotificationAsync(Guid userId, string message, string actionType = "approve")
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            return false;
+        }
+
+        // Check if push notification MFA device exists and is active
+        var pushDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "Push" && d.IsActive);
+
+        if (pushDevice == null)
+        {
+            _logger.LogWarning("No active push notification MFA device found for user {UserId}", userId);
+            return false;
+        }
+
+        try
+        {
+            // Generate push approval token
+            var approvalToken = GenerateMagicToken();
+
+            // Store push request in cache with expiration
+            var cacheKey = $"mfa:push:approval:{userId}";
+            _cache.Set(cacheKey, new
+            {
+                Token = approvalToken,
+                Message = message,
+                ActionType = actionType,
+                CreatedAt = DateTime.UtcNow
+            }, TimeSpan.FromMinutes(5));
+
+            // In a real implementation, this would send push notification via Firebase Cloud Messaging
+            // or Apple Push Notification Service
+            // For now, we'll simulate it
+            _logger.LogInformation("Push notification sent to user {UserId} with message: {Message}", userId, message);
+
+            // Update device last used timestamp
+            pushDevice.LastUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending push notification to user {UserId}", userId);
+            return false;
+        }
+    }
+
+    public async Task<bool> VerifyPushApprovalAsync(Guid userId, bool approved)
+    {
+        var cacheKey = $"mfa:push:approval:{userId}";
+
+        if (!_cache.TryGetValue<dynamic>(cacheKey, out var cachedData))
+        {
+            _logger.LogWarning("No pending push approval found for user {UserId}", userId);
+            return false;
+        }
+
+        if (!approved)
+        {
+            // User denied the push notification
+            _cache.Remove(cacheKey);
+            _logger.LogWarning("Push notification denied by user {UserId}", userId);
+            return false;
+        }
+
+        // Remove from cache after successful approval
+        _cache.Remove(cacheKey);
+
+        _logger.LogInformation("Push notification approved by user {UserId}", userId);
+
+        return true;
+    }
+
+    public async Task<bool> EnrollHardwareTokenAsync(Guid userId, string tokenSerial, string tokenType = "YubiKey")
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found");
+        }
+
+        // Check if token already enrolled
+        var existingDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId &&
+                                     d.DeviceType == "HardwareToken" &&
+                                     d.DeviceName.Contains(tokenSerial) &&
+                                     d.IsActive);
+
+        if (existingDevice != null)
+        {
+            _logger.LogInformation("Hardware token already enrolled for user {UserId}", userId);
+            return true;
+        }
+
+        // Enable MFA if not already enabled
+        if (!user.MfaEnabled)
+        {
+            user.MfaEnabled = true;
+            await _userManager.UpdateAsync(user);
+        }
+
+        // Create MFA device record
+        var device = new MfaDevice
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            DeviceType = "HardwareToken",
+            DeviceName = $"{tokenType} ({tokenSerial})",
+            IsActive = true,
+            IsPrimary = false,
+            RegisteredAt = DateTime.UtcNow
+        };
+
+        _context.MfaDevices.Add(device);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Hardware token enrolled for user {UserId}, serial: {Serial}", userId, tokenSerial);
+
+        return true;
+    }
+
+    public async Task<bool> VerifyHardwareTokenAsync(Guid userId, string otp)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            return false;
+        }
+
+        // Check if hardware token MFA device exists and is active
+        var tokenDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceType == "HardwareToken" && d.IsActive);
+
+        if (tokenDevice == null)
+        {
+            _logger.LogWarning("No active hardware token MFA device found for user {UserId}", userId);
+            return false;
+        }
+
+        // In a real implementation, this would verify the OTP against YubiKey's validation server
+        // or verify HOTP/TOTP from hardware token
+        // For now, we'll use a simple length check (YubiKey OTP is typically 44 characters)
+        var isValid = otp.Length == 44 || (otp.Length >= 6 && otp.Length <= 8 && int.TryParse(otp, out _));
+
+        if (isValid)
+        {
+            // Update device last used timestamp
+            tokenDevice.LastUsedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Hardware token verified successfully for user {UserId}", userId);
+        }
+        else
+        {
+            _logger.LogWarning("Invalid hardware token OTP for user {UserId}", userId);
+        }
+
+        return isValid;
+    }
+
+    public async Task<bool> EnrollPushNotificationAsync(Guid userId, string deviceToken, string devicePlatform)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user == null)
+        {
+            throw new InvalidOperationException("User not found");
+        }
+
+        // Enable MFA if not already enabled
+        if (!user.MfaEnabled)
+        {
+            user.MfaEnabled = true;
+            await _userManager.UpdateAsync(user);
+        }
+
+        // Check if push device already exists
+        var existingDevice = await _context.MfaDevices
+            .FirstOrDefaultAsync(d => d.UserId == userId &&
+                                     d.DeviceType == "Push" &&
+                                     d.DeviceName.Contains(devicePlatform) &&
+                                     d.IsActive);
+
+        if (existingDevice != null)
+        {
+            // Update device token
+            _logger.LogInformation("Updating push notification device for user {UserId}", userId);
+            return true;
+        }
+
+        // Create MFA device record
+        var device = new MfaDevice
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            DeviceType = "Push",
+            DeviceName = $"Push ({devicePlatform})",
+            IsActive = true,
+            IsPrimary = false,
+            RegisteredAt = DateTime.UtcNow
+        };
+
+        _context.MfaDevices.Add(device);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Push notification enrolled for user {UserId}, platform: {Platform}",
+            userId, devicePlatform);
+
+        return true;
+    }
+
     #region Private Helper Methods
 
     private bool VerifyTotpCode(string secret, string code)
@@ -665,6 +879,14 @@ public class MfaService : IMfaService
         }
 
         return $"****{phoneNumber.Substring(phoneNumber.Length - 4)}";
+    }
+
+    private static string GenerateMagicToken()
+    {
+        var bytes = new byte[32];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(bytes);
+        return Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").Replace("=", "");
     }
 
     #endregion

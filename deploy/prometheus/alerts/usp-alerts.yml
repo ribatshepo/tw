@@ -1,0 +1,266 @@
+groups:
+  - name: usp_critical_alerts
+    interval: 30s
+    rules:
+      # Service Down Alert
+      - alert: USPServiceDown
+        expr: up{job="usp-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: usp
+          category: availability
+        annotations:
+          summary: "USP service is down"
+          description: "USP API service has been down for more than 1 minute. Immediate action required."
+          runbook_url: "https://docs.internal/runbooks/usp-service-down"
+
+      # Database Unreachable
+      - alert: USPDatabaseUnreachable
+        expr: up{job="postgresql",instance=~".*usp.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: usp
+          category: database
+        annotations:
+          summary: "USP PostgreSQL database is unreachable"
+          description: "The USP database has been unreachable for more than 1 minute. All USP operations are likely failing."
+          runbook_url: "https://docs.internal/runbooks/usp-database-down"
+
+      # High Error Rate
+      - alert: USPHighErrorRate
+        expr: rate(usp_error_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          service: usp
+          category: errors
+        annotations:
+          summary: "USP experiencing high error rate"
+          description: "USP is experiencing {{ $value | humanize }} errors per second for the last 5 minutes (threshold: 5/sec)."
+          runbook_url: "https://docs.internal/runbooks/usp-high-error-rate"
+
+      # Seal Status Changed to Sealed
+      - alert: USPSealed
+        expr: usp_seal_status == 0
+        for: 30s
+        labels:
+          severity: critical
+          service: usp
+          category: security
+        annotations:
+          summary: "USP is SEALED"
+          description: "USP has been sealed and is not operational. Unsealing is required immediately to restore service."
+          runbook_url: "https://docs.internal/runbooks/usp-unsealing"
+
+      # HTTP 5xx Error Rate
+      - alert: USPHighServerErrorRate
+        expr: rate(usp_http_requests_total{status_code=~"5.."}[5m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          service: usp
+          category: errors
+        annotations:
+          summary: "USP experiencing high server error rate"
+          description: "USP is experiencing {{ $value | humanize }} HTTP 5xx errors per second for the last 5 minutes."
+          runbook_url: "https://docs.internal/runbooks/usp-server-errors"
+
+      # Redis Down
+      - alert: USPRedisUnreachable
+        expr: up{job="redis",instance=~".*usp.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: usp
+          category: cache
+        annotations:
+          summary: "USP Redis cache is unreachable"
+          description: "Redis cache for USP has been unreachable for more than 2 minutes. Session management and caching will fail."
+          runbook_url: "https://docs.internal/runbooks/usp-redis-down"
+
+  - name: usp_warning_alerts
+    interval: 60s
+    rules:
+      # Moderate Error Rate
+      - alert: USPModerateErrorRate
+        expr: rate(usp_error_total[5m]) > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: usp
+          category: errors
+        annotations:
+          summary: "USP experiencing moderate error rate"
+          description: "USP is experiencing {{ $value | humanize }} errors per second for the last 10 minutes (threshold: 1/sec)."
+          runbook_url: "https://docs.internal/runbooks/usp-moderate-errors"
+
+      # High Failed Login Rate
+      - alert: USPHighFailedLoginRate
+        expr: rate(usp_login_attempts_total{result="failure"}[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: usp
+          category: security
+        annotations:
+          summary: "High failed login attempt rate"
+          description: "USP is experiencing {{ $value | humanize }} failed login attempts per second. Possible brute force attack."
+          runbook_url: "https://docs.internal/runbooks/usp-failed-logins"
+
+      # Certificate Expiring Soon
+      - alert: USPCertificateExpiringSoon
+        expr: (usp_certificates_issued_total - usp_certificates_revoked_total) > 0 and time() > (usp_certificate_expiry_timestamp - 30*24*60*60)
+        for: 1h
+        labels:
+          severity: warning
+          service: usp
+          category: certificates
+        annotations:
+          summary: "USP certificates expiring within 30 days"
+          description: "One or more USP-issued certificates will expire within 30 days. Review and rotate certificates."
+          runbook_url: "https://docs.internal/runbooks/usp-certificate-renewal"
+
+      # High Account Lockout Rate
+      - alert: USPHighAccountLockoutRate
+        expr: rate(usp_account_lockouts_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: usp
+          category: security
+        annotations:
+          summary: "High account lockout rate"
+          description: "USP is experiencing {{ $value | humanize }} account lockouts per second. Investigate for potential issues."
+          runbook_url: "https://docs.internal/runbooks/usp-account-lockouts"
+
+      # Slow Authentication
+      - alert: USPSlowAuthentication
+        expr: histogram_quantile(0.95, rate(usp_authentication_duration_seconds_bucket[5m])) > 3
+        for: 10m
+        labels:
+          severity: warning
+          service: usp
+          category: performance
+        annotations:
+          summary: "USP authentication is slow"
+          description: "95th percentile authentication duration is {{ $value | humanize }}s (threshold: 3s). Users experiencing delays."
+          runbook_url: "https://docs.internal/runbooks/usp-slow-auth"
+
+      # Slow Authorization
+      - alert: USPSlowAuthorization
+        expr: histogram_quantile(0.95, rate(usp_authz_duration_seconds_bucket[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: usp
+          category: performance
+        annotations:
+          summary: "USP authorization checks are slow"
+          description: "95th percentile authorization duration is {{ $value | humanize }}s (threshold: 0.5s)."
+          runbook_url: "https://docs.internal/runbooks/usp-slow-authz"
+
+      # High Memory Usage
+      - alert: USPHighMemoryUsage
+        expr: process_working_set_bytes{job="usp-api"} / 1024 / 1024 / 1024 > 2
+        for: 15m
+        labels:
+          severity: warning
+          service: usp
+          category: resources
+        annotations:
+          summary: "USP using high memory"
+          description: "USP is using {{ $value | humanize }}GB of memory (threshold: 2GB). Monitor for memory leaks."
+          runbook_url: "https://docs.internal/runbooks/usp-high-memory"
+
+      # High Request Latency
+      - alert: USPHighRequestLatency
+        expr: histogram_quantile(0.95, rate(usp_http_request_duration_seconds_bucket[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: usp
+          category: performance
+        annotations:
+          summary: "USP experiencing high request latency"
+          description: "95th percentile request latency is {{ $value | humanize }}s (threshold: 2s)."
+          runbook_url: "https://docs.internal/runbooks/usp-high-latency"
+
+      # Break-Glass Activated
+      - alert: USPBreakGlassActivated
+        expr: increase(usp_pam_break_glass_activations_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: usp
+          category: security
+        annotations:
+          summary: "Break-glass emergency access activated"
+          description: "Break-glass emergency access has been activated {{ $value }} times in the last 5 minutes. Immediate audit required."
+          runbook_url: "https://docs.internal/runbooks/usp-break-glass"
+
+      # Many Authorization Denials
+      - alert: USPHighAuthorizationDenials
+        expr: rate(usp_authz_checks_total{result="denied"}[5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: usp
+          category: security
+        annotations:
+          summary: "High authorization denial rate"
+          description: "USP is experiencing {{ $value | humanize }} authorization denials per second. Review access policies."
+          runbook_url: "https://docs.internal/runbooks/usp-authz-denials"
+
+      # RabbitMQ Down
+      - alert: USPRabbitMQUnreachable
+        expr: up{job="rabbitmq",instance=~".*usp.*"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: usp
+          category: messaging
+        annotations:
+          summary: "USP RabbitMQ is unreachable"
+          description: "RabbitMQ for USP has been unreachable for more than 5 minutes. Event processing may be degraded."
+          runbook_url: "https://docs.internal/runbooks/usp-rabbitmq-down"
+
+  - name: usp_info_alerts
+    interval: 300s
+    rules:
+      # High Active Sessions
+      - alert: USPHighActiveSessions
+        expr: usp_active_sessions > 1000
+        for: 15m
+        labels:
+          severity: info
+          service: usp
+          category: usage
+        annotations:
+          summary: "USP has high number of active sessions"
+          description: "USP currently has {{ $value }} active sessions. Monitor for capacity."
+
+      # Many PAM Checkouts
+      - alert: USPHighPAMCheckouts
+        expr: usp_pam_checked_out > 100
+        for: 15m
+        labels:
+          severity: info
+          service: usp
+          category: usage
+        annotations:
+          summary: "High number of PAM accounts checked out"
+          description: "{{ $value }} PAM accounts are currently checked out. Monitor for anomalies."
+
+      # High Secret Access Rate
+      - alert: USPHighSecretAccessRate
+        expr: rate(usp_secret_access_total[5m]) > 100
+        for: 15m
+        labels:
+          severity: info
+          service: usp
+          category: usage
+        annotations:
+          summary: "High secret access rate"
+          description: "USP is processing {{ $value | humanize }} secret access operations per second."
