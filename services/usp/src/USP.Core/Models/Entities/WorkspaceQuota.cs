@@ -20,6 +20,16 @@ public class WorkspaceQuota
     public int MaxSecrets { get; set; } = 100;
 
     /// <summary>
+    /// Maximum number of API keys allowed
+    /// </summary>
+    public int MaxApiKeys { get; set; } = 50;
+
+    /// <summary>
+    /// Maximum number of safes/vaults allowed
+    /// </summary>
+    public int MaxSafes { get; set; } = 10;
+
+    /// <summary>
     /// Maximum number of privileged accounts
     /// </summary>
     public int MaxPrivilegedAccounts { get; set; } = 10;

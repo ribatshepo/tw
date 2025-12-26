@@ -96,6 +96,11 @@ public class CloudSyncConfiguration
     public string? GcpServiceAccountJson { get; set; }
 
     /// <summary>
+    /// Encrypted credentials as JSON (consolidated storage for all provider credentials)
+    /// </summary>
+    public string? EncryptedCredentials { get; set; }
+
+    /// <summary>
     /// Path prefix filter (sync only secrets matching this path)
     /// </summary>
     [MaxLength(500)]

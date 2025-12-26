@@ -13,6 +13,12 @@ public class UpdateWorkspaceQuotaRequest
     [Range(1, 1000000)]
     public int? MaxSecrets { get; set; }
 
+    [Range(1, 1000)]
+    public int? MaxApiKeys { get; set; }
+
+    [Range(1, 100)]
+    public int? MaxSafes { get; set; }
+
     [Range(1, 10000)]
     public int? MaxPrivilegedAccounts { get; set; }
 

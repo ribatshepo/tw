@@ -76,6 +76,11 @@ public class Workspace
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? DeletedAt { get; set; }
 
+    /// <summary>
+    /// Computed property to check if workspace is soft-deleted
+    /// </summary>
+    public bool IsDeleted => DeletedAt.HasValue;
+
     // Navigation properties
     public virtual ApplicationUser Owner { get; set; } = null!;
     public virtual Workspace? ParentWorkspace { get; set; }

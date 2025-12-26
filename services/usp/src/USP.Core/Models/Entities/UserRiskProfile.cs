@@ -47,6 +47,7 @@ public class UserRiskProfile
     // Metadata
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? LastCalculatedAt { get; set; }
 
     // Navigation property
     public ApplicationUser User { get; set; } = null!;

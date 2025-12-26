@@ -112,3 +112,5 @@ rabbitmq_data/
 *.swp
 *.swo
 *~
+
+.fake

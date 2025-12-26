@@ -86,6 +86,12 @@ public class DetailedHealthCheck : IHealthCheck
         if (sealHealth.Status == "unhealthy") unhealthyChecks.Add("seal_status");
         else if (sealHealth.Status == "degraded") degradedChecks.Add("seal_status");
 
+        // 10. Configuration Check
+        var configHealth = CheckConfiguration();
+        checks["configuration"] = configHealth;
+        if (configHealth.Status == "unhealthy") unhealthyChecks.Add("configuration");
+        else if (configHealth.Status == "degraded") degradedChecks.Add("configuration");
+
         // Determine overall health status
         if (unhealthyChecks.Any())
         {
@@ -470,6 +476,55 @@ public class DetailedHealthCheck : IHealthCheck
         var password = _configuration.GetValue<string>("Database:Password") ?? "";
 
         return $"Host={host};Port={port};Database={database};Username={username};Password={password}";
+    }
+
+    private HealthCheckInfo CheckConfiguration()
+    {
+        try
+        {
+            var issues = new List<string>();
+
+            // Check critical configuration sections
+            if (string.IsNullOrEmpty(_configuration["Jwt:Secret"]) &&
+                string.IsNullOrEmpty(_configuration["Jwt:PrivateKeyPath"]))
+            {
+                issues.Add("JWT configuration missing");
+            }
+
+            if (string.IsNullOrEmpty(_configuration["Database:Host"]))
+            {
+                issues.Add("Database configuration missing");
+            }
+
+            if (string.IsNullOrEmpty(_configuration["WebAuthn:RelyingPartyId"]))
+            {
+                issues.Add("WebAuthn configuration missing");
+            }
+
+            if (issues.Any())
+            {
+                return new HealthCheckInfo
+                {
+                    Status = "degraded",
+                    Message = $"Configuration issues: {string.Join(", ", issues)}"
+                };
+            }
+
+            return new HealthCheckInfo
+            {
+                Status = "healthy",
+                Message = "All critical configuration present"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Configuration health check failed");
+            return new HealthCheckInfo
+            {
+                Status = "degraded",
+                Message = $"Check failed: {ex.Message}"
+            };
+        }
     }
 
     private class HealthCheckInfo

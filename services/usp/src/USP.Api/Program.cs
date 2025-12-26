@@ -43,6 +43,8 @@ using USP.Infrastructure.Services.PAM;
 using USP.Infrastructure.Services.Secrets;
 using USP.Infrastructure.Services.Session;
 using USP.Infrastructure.Services.Webhook;
+using USP.Infrastructure.Services.Threat;
+using USP.Infrastructure.Services.UserLifecycle;
 using USP.Api.Metrics;
 using USP.Api.Observability;
 using USP.Api.Health;
@@ -290,7 +292,26 @@ try
     builder.Services.AddScoped<IKvEngine, KvEngine>();
     builder.Services.AddScoped<ITransitEngine, TransitEngine>();
     builder.Services.AddScoped<IPkiEngine, PkiEngine>();
+    builder.Services.AddScoped<IDatabaseEngine, DatabaseEngine>();
     builder.Services.AddScoped<ILeaseManagementService, LeaseManagementService>();
+
+    // Additional Authentication Services
+    builder.Services.AddScoped<IBiometricAuthService, BiometricAuthService>();
+    builder.Services.AddScoped<IBiometricVerifier, AzureFaceBiometricVerifier>();
+    builder.Services.AddScoped<ICertificateAuthService, CertificateAuthService>();
+
+    // Additional Compliance Services
+    builder.Services.AddScoped<ISoc2ComplianceService, Soc2ComplianceService>();
+    builder.Services.AddScoped<IHipaaComplianceService, HipaaComplianceService>();
+
+    // Additional Authorization Services
+    builder.Services.AddScoped<IColumnSecurityEngine, ColumnSecurityEngine>();
+
+    // Threat Analytics
+    builder.Services.AddScoped<IThreatAnalyticsEngine, ThreatAnalyticsEngine>();
+
+    // User Lifecycle and SCIM
+    builder.Services.AddScoped<IScimProviderService, ScimProviderService>();
 
     // FluentValidation
     builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();

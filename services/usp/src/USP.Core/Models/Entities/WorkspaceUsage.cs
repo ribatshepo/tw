@@ -15,9 +15,55 @@ public class WorkspaceUsage
     public int CurrentUsers { get; set; } = 0;
 
     /// <summary>
+    /// Alias for CurrentUsers (for backwards compatibility)
+    /// </summary>
+    public int UsersCount
+    {
+        get => CurrentUsers;
+        set => CurrentUsers = value;
+    }
+
+    /// <summary>
     /// Current number of secrets
     /// </summary>
     public int CurrentSecrets { get; set; } = 0;
+
+    /// <summary>
+    /// Alias for CurrentSecrets (for backwards compatibility)
+    /// </summary>
+    public int SecretsCount
+    {
+        get => CurrentSecrets;
+        set => CurrentSecrets = value;
+    }
+
+    /// <summary>
+    /// Current number of API keys
+    /// </summary>
+    public int CurrentApiKeys { get; set; } = 0;
+
+    /// <summary>
+    /// Alias for CurrentApiKeys (for backwards compatibility)
+    /// </summary>
+    public int ApiKeysCount
+    {
+        get => CurrentApiKeys;
+        set => CurrentApiKeys = value;
+    }
+
+    /// <summary>
+    /// Current number of safes/vaults
+    /// </summary>
+    public int CurrentSafes { get; set; } = 0;
+
+    /// <summary>
+    /// Alias for CurrentSafes (for backwards compatibility)
+    /// </summary>
+    public int SafesCount
+    {
+        get => CurrentSafes;
+        set => CurrentSafes = value;
+    }
 
     /// <summary>
     /// Current number of privileged accounts
@@ -66,6 +112,15 @@ public class WorkspaceUsage
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Alias for UpdatedAt (for backwards compatibility)
+    /// </summary>
+    public DateTime LastUpdated
+    {
+        get => UpdatedAt;
+        set => UpdatedAt = value;
+    }
 
     // Navigation properties
     public virtual Workspace Workspace { get; set; } = null!;

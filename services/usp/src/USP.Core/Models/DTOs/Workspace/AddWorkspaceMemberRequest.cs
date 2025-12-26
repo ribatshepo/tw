@@ -14,6 +14,11 @@ public class AddWorkspaceMemberRequest
     public string UserIdentifier { get; set; } = string.Empty;
 
     /// <summary>
+    /// User ID (when adding by ID)
+    /// </summary>
+    public Guid? UserId { get; set; }
+
+    /// <summary>
     /// Role for the member: owner, admin, member, viewer
     /// </summary>
     [Required]

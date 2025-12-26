@@ -39,9 +39,15 @@ public class WorkspaceMember
     /// </summary>
     public Guid? InvitedBy { get; set; }
 
+    /// <summary>
+    /// When the member was invited
+    /// </summary>
+    public DateTime InvitedAt { get; set; } = DateTime.UtcNow;
+
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LeftAt { get; set; }
     public DateTime? LastAccessedAt { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties
     public virtual Workspace Workspace { get; set; } = null!;

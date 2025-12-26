@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using USP.Core.Models.DTOs.Authentication;
+using USP.Core.Models.Entities;
 using USP.Core.Services.Authentication;
 using USP.Infrastructure.Data;
 using USP.Infrastructure.Services.Authentication;
@@ -21,6 +22,7 @@ public class BiometricAuthServiceTests : IDisposable
     private readonly Mock<ILogger<BiometricAuthService>> _loggerMock;
     private readonly Mock<IRiskAssessmentService> _riskServiceMock;
     private readonly Mock<IConfiguration> _configurationMock;
+    private readonly Mock<IBiometricVerifier> _biometricVerifierMock;
     private readonly BiometricAuthService _service;
 
     public BiometricAuthServiceTests()
@@ -36,13 +38,15 @@ public class BiometricAuthServiceTests : IDisposable
         _loggerMock = new Mock<ILogger<BiometricAuthService>>();
         _riskServiceMock = new Mock<IRiskAssessmentService>();
         _configurationMock = new Mock<IConfiguration>();
+        _biometricVerifierMock = new Mock<IBiometricVerifier>();
 
         _service = new BiometricAuthService(
             _context,
             _jwtServiceMock.Object,
             _loggerMock.Object,
             _riskServiceMock.Object,
-            _configurationMock.Object);
+            _configurationMock.Object,
+            _biometricVerifierMock.Object);
     }
 
     [Fact]

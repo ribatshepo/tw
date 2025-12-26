@@ -340,6 +340,70 @@ public static class PrometheusMetrics
         });
 
     // ========================================
+    // COMPLIANCE & THREAT METRICS (5 metrics)
+    // ========================================
+
+    /// <summary>
+    /// Total number of compliance violations detected.
+    /// Labels: standard (soc2/hipaa/pci_dss), severity (critical/high/medium/low)
+    /// </summary>
+    public static readonly Counter ComplianceViolations = Prometheus.Metrics.CreateCounter(
+        "usp_compliance_violations_total",
+        "Total number of compliance violations detected",
+        new CounterConfiguration
+        {
+            LabelNames = new[] { "standard", "severity" }
+        });
+
+    /// <summary>
+    /// Total number of threat detections.
+    /// Labels: type (sql_injection/xss/path_traversal/suspicious_pattern)
+    /// </summary>
+    public static readonly Counter ThreatDetections = Prometheus.Metrics.CreateCounter(
+        "usp_threat_detections_total",
+        "Total number of threat detections",
+        new CounterConfiguration
+        {
+            LabelNames = new[] { "type" }
+        });
+
+    /// <summary>
+    /// Total number of SCIM provisioning operations.
+    /// Labels: operation (create/update/delete), result (success/failure)
+    /// </summary>
+    public static readonly Counter ScimOperations = Prometheus.Metrics.CreateCounter(
+        "usp_scim_operations_total",
+        "Total number of SCIM provisioning operations",
+        new CounterConfiguration
+        {
+            LabelNames = new[] { "operation", "result" }
+        });
+
+    /// <summary>
+    /// Current risk score distribution by level.
+    /// Labels: level (low/medium/high/critical)
+    /// </summary>
+    public static readonly Gauge RiskScoreDistribution = Prometheus.Metrics.CreateGauge(
+        "usp_risk_score_distribution",
+        "Current risk score distribution by level",
+        new GaugeConfiguration
+        {
+            LabelNames = new[] { "level" }
+        });
+
+    /// <summary>
+    /// Total number of biometric authentication attempts.
+    /// Labels: type (fingerprint/face/iris), result (success/failure)
+    /// </summary>
+    public static readonly Counter BiometricAuthentications = Prometheus.Metrics.CreateCounter(
+        "usp_biometric_authentications_total",
+        "Total number of biometric authentication attempts",
+        new CounterConfiguration
+        {
+            LabelNames = new[] { "type", "result" }
+        });
+
+    // ========================================
     // SYSTEM METRICS (3 metrics)
     // ========================================
 

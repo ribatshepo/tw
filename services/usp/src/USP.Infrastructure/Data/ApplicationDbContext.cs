@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using USP.Core.Models.Entities;
+using USP.Core.Models.Entities.Rotation;
 using USP.Infrastructure.Data.Configurations;
 
 namespace USP.Infrastructure.Data;
@@ -104,6 +105,27 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     // Authorization Security DbSets
     public DbSet<ColumnSecurityRule> ColumnSecurityRules { get; set; }
     public DbSet<ContextPolicy> ContextPolicies { get; set; }
+
+    // Cloud Sync DbSets
+    public DbSet<CloudSyncConfiguration> CloudSyncConfigurations { get; set; }
+    public DbSet<CloudSyncHistory> CloudSyncHistories { get; set; }
+    public DbSet<CloudSyncHistory> CloudSyncHistory { get; set; }
+    public DbSet<CloudSyncConflict> CloudSyncConflicts { get; set; }
+
+    // Access Certification DbSets
+    public DbSet<AccessCertificationCampaign> AccessCertificationCampaigns { get; set; }
+    public DbSet<AccessCertificationReview> AccessCertificationReviews { get; set; }
+
+    // Certificate Rotation DbSets
+    public DbSet<CertificateRotation> CertificateRotations { get; set; }
+    public DbSet<CertificateRotationHistory> CertificateRotationHistories { get; set; }
+
+    // SSH Engine DbSets
+    public DbSet<SSHRole> SSHRoles { get; set; }
+    public DbSet<SSHHostKey> SSHHostKeys { get; set; }
+    public DbSet<SSHCertificateAuthority> SSHCertificateAuthorities { get; set; }
+    public DbSet<SSHOtp> SSHOtps { get; set; }
+    public DbSet<SSHCertificate> SSHCertificates { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using USP.Core.Models.Entities;
 using USP.Core.Services.Communication;
@@ -23,6 +24,7 @@ public class MfaServiceProductionTests : IDisposable
     private readonly Mock<IConfiguration> _configurationMock;
     private readonly Mock<ILogger<MfaService>> _loggerMock;
     private readonly Mock<ISmsService> _smsServiceMock;
+    private readonly Mock<IHttpClientFactory> _httpClientFactoryMock;
     private readonly IMemoryCache _cache;
     private readonly MfaService _service;
 
@@ -34,15 +36,35 @@ public class MfaServiceProductionTests : IDisposable
             .Options;
         _context = new ApplicationDbContext(options);
 
-        // Setup UserManager mock
+        // Setup UserManager mock with proper null handling
         var userStoreMock = new Mock<IUserStore<ApplicationUser>>();
+        var optionsMock = new Mock<IOptions<IdentityOptions>>();
+        var passwordHasherMock = new Mock<IPasswordHasher<ApplicationUser>>();
+        var userValidatorsMock = new List<IUserValidator<ApplicationUser>>();
+        var passwordValidatorsMock = new List<IPasswordValidator<ApplicationUser>>();
+        var keyNormalizerMock = new Mock<ILookupNormalizer>();
+        var errorsMock = new Mock<IdentityErrorDescriber>();
+        var servicesMock = new Mock<IServiceProvider>();
+        var loggerMock = new Mock<ILogger<UserManager<ApplicationUser>>>();
+
+        optionsMock.Setup(o => o.Value).Returns(new IdentityOptions());
+
         _userManagerMock = new Mock<UserManager<ApplicationUser>>(
-            userStoreMock.Object, null, null, null, null, null, null, null, null);
+            userStoreMock.Object,
+            optionsMock.Object,
+            passwordHasherMock.Object,
+            userValidatorsMock,
+            passwordValidatorsMock,
+            keyNormalizerMock.Object,
+            errorsMock.Object,
+            servicesMock.Object,
+            loggerMock.Object);
 
         // Setup other mocks
         _configurationMock = new Mock<IConfiguration>();
         _loggerMock = new Mock<ILogger<MfaService>>();
         _smsServiceMock = new Mock<ISmsService>();
+        _httpClientFactoryMock = new Mock<IHttpClientFactory>();
         _cache = new MemoryCache(new MemoryCacheOptions());
 
         _service = new MfaService(
@@ -51,7 +73,8 @@ public class MfaServiceProductionTests : IDisposable
             _configurationMock.Object,
             _loggerMock.Object,
             _smsServiceMock.Object,
-            _cache);
+            _cache,
+            _httpClientFactoryMock.Object);
     }
 
     [Fact]
