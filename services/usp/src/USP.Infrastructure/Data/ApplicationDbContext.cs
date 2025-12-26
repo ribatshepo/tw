@@ -55,6 +55,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
     public DbSet<JitAccessTemplate> JitAccessTemplates { get; set; }
     public DbSet<BreakGlassAccess> BreakGlassAccesses { get; set; }
     public DbSet<BreakGlassPolicy> BreakGlassPolicies { get; set; }
+    public DbSet<TransitKey> TransitKeys { get; set; }
+    public DbSet<TransitKeyVersion> TransitKeyVersions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -68,6 +70,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
         builder.ApplyConfiguration(new AccessPolicyConfiguration());
         builder.ApplyConfiguration(new SecretConfiguration());
         builder.ApplyConfiguration(new SessionConfiguration());
+        builder.ApplyConfiguration(new TransitKeyConfiguration());
+        builder.ApplyConfiguration(new TransitKeyVersionConfiguration());
 
         // Configure RolePermission
         builder.Entity<RolePermission>(entity =>
@@ -100,7 +104,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(sal => sal.SecretId).HasColumnName("secret_id");
             entity.Property(sal => sal.AccessedBy).HasColumnName("accessed_by");
             entity.Property(sal => sal.AccessType).HasColumnName("access_type").HasMaxLength(50);
-            entity.Property(sal => sal.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(sal => sal.IpAddress).HasColumnName("ip_address");
             entity.Property(sal => sal.UserAgent).HasColumnName("user_agent");
             entity.Property(sal => sal.AccessedAt).HasColumnName("accessed_at");
 
@@ -131,7 +135,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(al => al.ResourceId).HasColumnName("resource_id").HasMaxLength(500);
             entity.Property(al => al.OldValue).HasColumnName("old_value");
             entity.Property(al => al.NewValue).HasColumnName("new_value");
-            entity.Property(al => al.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(al => al.IpAddress).HasColumnName("ip_address");
             entity.Property(al => al.UserAgent).HasColumnName("user_agent");
             entity.Property(al => al.Status).HasColumnName("status").HasMaxLength(50);
             entity.Property(al => al.ErrorMessage).HasColumnName("error_message");
@@ -414,7 +418,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(ac => ac.RotateOnCheckin).HasColumnName("rotate_on_checkin");
             entity.Property(ac => ac.WasRotated).HasColumnName("was_rotated");
             entity.Property(ac => ac.SessionRecordingPath).HasColumnName("session_recording_path").HasMaxLength(1000);
-            entity.Property(ac => ac.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(ac => ac.IpAddress).HasColumnName("ip_address");
             entity.Property(ac => ac.UserAgent).HasColumnName("user_agent");
             entity.Property(ac => ac.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
 
@@ -499,7 +503,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(ps => ps.SuspiciousActivityDetected).HasColumnName("suspicious_activity_detected");
             entity.Property(ps => ps.SuspiciousActivityDetails).HasColumnName("suspicious_activity_details");
             entity.Property(ps => ps.Status).HasColumnName("status").HasMaxLength(50);
-            entity.Property(ps => ps.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(ps => ps.IpAddress).HasColumnName("ip_address");
             entity.Property(ps => ps.UserAgent).HasColumnName("user_agent");
             entity.Property(ps => ps.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
             entity.Property(ps => ps.CreatedAt).HasColumnName("created_at");
@@ -585,7 +589,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(j => j.AutoDeprovisioningCompleted).HasColumnName("auto_deprovisioning_completed");
             entity.Property(j => j.ProvisioningDetails).HasColumnName("provisioning_details");
             entity.Property(j => j.DeprovisioningDetails).HasColumnName("deprovisioning_details");
-            entity.Property(j => j.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(j => j.IpAddress).HasColumnName("ip_address");
             entity.Property(j => j.UserAgent).HasColumnName("user_agent");
             entity.Property(j => j.Metadata).HasColumnName("metadata").HasColumnType("jsonb");
 
@@ -677,7 +681,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Role, Gui
             entity.Property(bg => bg.ReviewedAt).HasColumnName("reviewed_at");
             entity.Property(bg => bg.ReviewNotes).HasColumnName("review_notes");
             entity.Property(bg => bg.ReviewDecision).HasColumnName("review_decision").HasMaxLength(100);
-            entity.Property(bg => bg.IpAddress).HasColumnName("ip_address").HasColumnType("inet");
+            entity.Property(bg => bg.IpAddress).HasColumnName("ip_address");
             entity.Property(bg => bg.UserAgent).HasColumnName("user_agent");
             entity.Property(bg => bg.Location).HasColumnName("location").HasMaxLength(500);
             entity.Property(bg => bg.DeviceFingerprint).HasColumnName("device_fingerprint").HasMaxLength(500);
