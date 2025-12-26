@@ -59,7 +59,7 @@ public class SealedException : USPException
 public class RotationException : USPException
 {
     public RotationException(string message, Exception? innerException = null)
-        : base("ROTATION_FAILED", message, innerException)
+        : base("ROTATION_FAILED", message, innerException!)
     {
     }
 }

@@ -20,7 +20,7 @@ public class JwtOptions
     public string Audience { get; set; } = "security-api";
 
     /// <summary>
-    /// Secret key for JWT signing (development only, use certificates in production) - ENV: JWT_SECRET_KEY
+    /// Secret key for JWT signing - ENV: JWT_SECRET_KEY
     /// </summary>
     public string? SecretKey { get; set; }
 
@@ -40,4 +40,22 @@ public class JwtOptions
     /// Algorithm for JWT signing - ENV: JWT_ALGORITHM (default: RS256)
     /// </summary>
     public string Algorithm { get; set; } = "RS256";
+
+    /// <summary>
+    /// Path to RSA public key for JWT verification - ENV: JWT_PUBLIC_KEY_PATH
+    /// </summary>
+    [Required(ErrorMessage = "JWT PublicKeyPath is required for production deployment")]
+    public string PublicKeyPath { get; set; } = null!;
+
+    /// <summary>
+    /// Path to RSA private key for JWT signing - ENV: JWT_PRIVATE_KEY_PATH
+    /// </summary>
+    [Required(ErrorMessage = "JWT PrivateKeyPath is required for production deployment")]
+    public string PrivateKeyPath { get; set; } = null!;
+
+    /// <summary>
+    /// Refresh token length in bytes - ENV: JWT_REFRESH_TOKEN_LENGTH (default: 64)
+    /// </summary>
+    [Range(32, 128, ErrorMessage = "Refresh token length must be between 32 and 128 bytes")]
+    public int RefreshTokenLength { get; set; } = 64;
 }

@@ -92,6 +92,11 @@ public class Session
     public DateTime? RevokedAt { get; set; }
 
     /// <summary>
+    /// Indicates whether the session has been revoked
+    /// </summary>
+    public bool IsRevoked => RevokedAt.HasValue;
+
+    /// <summary>
     /// Reason for revocation (e.g., "User logout", "Admin revoked", "Security alert")
     /// </summary>
     [MaxLength(255)]
