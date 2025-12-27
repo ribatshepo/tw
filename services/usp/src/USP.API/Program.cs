@@ -6,6 +6,7 @@ using Serilog.Sinks.Elasticsearch;
 using USP.Core.Domain.Entities.Identity;
 using USP.Core.Interfaces.Services;
 using USP.Core.Interfaces.Services.Secrets;
+using USP.Infrastructure.Authorization;
 using USP.Infrastructure.Persistence;
 using USP.Infrastructure.Services;
 using USP.Infrastructure.Services.Secrets;
@@ -125,6 +126,12 @@ builder.Services.AddScoped<USP.Core.Interfaces.Services.Authentication.IMFAServi
 // Secrets Management Services
 builder.Services.AddScoped<USP.Core.Interfaces.Services.Secrets.IEncryptionService, USP.Infrastructure.Services.Secrets.EncryptionService>();
 builder.Services.AddScoped<USP.Core.Interfaces.Services.Secrets.ISecretService, USP.Infrastructure.Services.Secrets.SecretService>();
+
+// Authorization Services
+builder.Services.AddScoped<USP.Core.Interfaces.Services.Authorization.IAuthorizationService, USP.Infrastructure.Services.Authorization.AuthorizationService>();
+
+// Permission-based Authorization (custom policy provider and handlers)
+builder.Services.AddPermissionBasedAuthorization();
 
 // Redis Distributed Cache
 var redisConnectionString = $"{builder.Configuration["Redis:Host"]}:{builder.Configuration["Redis:Port"]},password={builder.Configuration["Redis:Password"]},ssl={builder.Configuration["Redis:EnableSsl"]},abortConnect=false,connectTimeout={builder.Configuration["Redis:ConnectTimeout"]},syncTimeout={builder.Configuration["Redis:SyncTimeout"]}";
