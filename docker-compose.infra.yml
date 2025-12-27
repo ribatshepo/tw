@@ -1,11 +1,15 @@
 version: '3.9'
 
 # ================================================================================================
-# GBMM Platform - Infrastructure Services
+# GBMM Platform - Infrastructure Services (Minimal Setup)
 # ================================================================================================
-# This file orchestrates all infrastructure components:
+# This file contains infrastructure components for the GBMM platform.
+#
+# CURRENTLY ACTIVE:
 # - PostgreSQL (database)
 # - Redis (cache)
+#
+# FUTURE SERVICES (commented out, uncomment when needed):
 # - Apache Kafka + Zookeeper (event streaming)
 # - MinIO (object storage)
 # - RabbitMQ (message broker)
@@ -14,12 +18,12 @@ version: '3.9'
 # - Jaeger (distributed tracing)
 # - Elasticsearch (log aggregation)
 #
-# Note: Secrets management is provided by USP (Unified Security Platform) service,
-# not by HashiCorp Vault. USP will be added in docker-compose.yml when services are implemented.
+# Note: Secrets management is provided by USP (Unified Security Platform) service.
 #
 # Usage:
-#   docker-compose -f docker-compose.infra.yml up -d
-#   docker-compose -f docker-compose.infra.yml down
+#   docker-compose -f docker-compose.infra.yml up -d     # Start active services (postgres, redis)
+#   docker-compose -f docker-compose.infra.yml down      # Stop all services
+#   docker-compose -f docker-compose.infra.yml ps        # Check service status
 # ================================================================================================
 
 services:
@@ -96,368 +100,379 @@ services:
           cpus: '0.5'
           memory: 1g
 
-  # Zookeeper - Kafka Coordination
-  zookeeper:
-    image: confluentinc/cp-zookeeper:${KAFKA_VERSION:-7.5.0}
-    container_name: gbmm-zookeeper
-    restart: unless-stopped
-    environment:
-      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT:-2181}
-      ZOOKEEPER_TICK_TIME: ${ZOOKEEPER_TICK_TIME:-2000}
-      ZOOKEEPER_SYNC_LIMIT: 5
-      ZOOKEEPER_INIT_LIMIT: 10
-      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=*"
-    ports:
-      - "${ZOOKEEPER_PORT:-2181}:2181"
-    volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
-      - zookeeper_logs:/var/lib/zookeeper/log
-    networks:
-      - data
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1g
-        reservations:
-          cpus: '0.5'
-          memory: 512m
+  # ==============================================================================================
+  # FUTURE SERVICES (Commented out - not needed yet)
+  # ==============================================================================================
+  # Uncomment these services when needed for future features
 
-  # Apache Kafka - Event Streaming
-  kafka:
-    image: confluentinc/cp-kafka:${KAFKA_VERSION:-7.5.0}
-    container_name: gbmm-kafka
-    restart: unless-stopped
-    depends_on:
-      - zookeeper
-    environment:
-      KAFKA_BROKER_ID: ${KAFKA_BROKER_ID:-1}
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:${ZOOKEEPER_PORT:-2181}
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:${KAFKA_PORT:-9092},PLAINTEXT_HOST://localhost:${KAFKA_EXTERNAL_PORT:-9093}
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: ${KAFKA_AUTO_CREATE_TOPICS:-true}
-      KAFKA_NUM_PARTITIONS: ${KAFKA_NUM_PARTITIONS:-3}
-      KAFKA_LOG_RETENTION_HOURS: ${KAFKA_LOG_RETENTION_HOURS:-168}
-      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xmx2g -Xms2g}
-    ports:
-      - "${KAFKA_PORT:-9092}:9092"
-      - "${KAFKA_EXTERNAL_PORT:-9093}:9093"
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    networks:
-      - data
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '${KAFKA_CPU_LIMIT:-2}'
-          memory: ${KAFKA_MEMORY_LIMIT:-4g}
-        reservations:
-          cpus: '1'
-          memory: 2g
+  # Zookeeper - Kafka Coordination (for event streaming - future)
+  #zookeeper:
+  #  image: confluentinc/cp-zookeeper:${KAFKA_VERSION:-7.5.0}
+  #  container_name: gbmm-zookeeper
+  #  restart: unless-stopped
+  #  environment:
+  #    ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT:-2181}
+  #    ZOOKEEPER_TICK_TIME: ${ZOOKEEPER_TICK_TIME:-2000}
+  #    ZOOKEEPER_SYNC_LIMIT: 5
+  #    ZOOKEEPER_INIT_LIMIT: 10
+  #    KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=*"
+  #  ports:
+  #    - "${ZOOKEEPER_PORT:-2181}:2181"
+  #  volumes:
+  #    - zookeeper_data:/var/lib/zookeeper/data
+  #    - zookeeper_logs:/var/lib/zookeeper/log
+  #  networks:
+  #    - data
+  #  healthcheck:
+  #    test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '1'
+  #        memory: 1g
+  #      reservations:
+  #        cpus: '0.5'
+  #        memory: 512m
 
-  # MinIO - S3-Compatible Object Storage
-  minio:
-    image: minio/minio:${MINIO_VERSION:-latest}
-    container_name: gbmm-minio
-    restart: unless-stopped
-    command: server /data --console-address ":${MINIO_CONSOLE_PORT:-9001}"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_REGION: ${MINIO_REGION:-us-east-1}
-    ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - minio_data:/data
-    networks:
-      - data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '${MINIO_CPU_LIMIT:-1}'
-          memory: ${MINIO_MEMORY_LIMIT:-2g}
-        reservations:
-          cpus: '0.5'
-          memory: 1g
+  # Apache Kafka - Event Streaming (for event streaming - future)
+  #kafka:
+  #  image: confluentinc/cp-kafka:${KAFKA_VERSION:-7.5.0}
+  #  container_name: gbmm-kafka
+  #  restart: unless-stopped
+  #  depends_on:
+  #    - zookeeper
+  #  environment:
+  #    KAFKA_BROKER_ID: ${KAFKA_BROKER_ID:-1}
+  #    KAFKA_ZOOKEEPER_CONNECT: zookeeper:${ZOOKEEPER_PORT:-2181}
+  #    KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:${KAFKA_PORT:-9092},PLAINTEXT_HOST://localhost:${KAFKA_EXTERNAL_PORT:-9093}
+  #    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  #    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+  #    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+  #    KAFKA_AUTO_CREATE_TOPICS_ENABLE: ${KAFKA_AUTO_CREATE_TOPICS:-true}
+  #    KAFKA_NUM_PARTITIONS: ${KAFKA_NUM_PARTITIONS:-3}
+  #    KAFKA_LOG_RETENTION_HOURS: ${KAFKA_LOG_RETENTION_HOURS:-168}
+  #    KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xmx2g -Xms2g}
+  #  ports:
+  #    - "${KAFKA_PORT:-9092}:9092"
+  #    - "${KAFKA_EXTERNAL_PORT:-9093}:9093"
+  #  volumes:
+  #    - kafka_data:/var/lib/kafka/data
+  #  networks:
+  #    - data
+  #  healthcheck:
+  #    test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '${KAFKA_CPU_LIMIT:-2}'
+  #        memory: ${KAFKA_MEMORY_LIMIT:-4g}
+  #      reservations:
+  #        cpus: '1'
+  #        memory: 2g
 
-  # RabbitMQ - Message Broker
-  rabbitmq:
-    image: rabbitmq:${RABBITMQ_VERSION:-3.12-management-alpine}
-    container_name: gbmm-rabbitmq
-    restart: unless-stopped
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
-      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
-    ports:
-      - "${RABBITMQ_PORT:-5672}:5672"
-      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    networks:
-      - data
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '${RABBITMQ_CPU_LIMIT:-2}'
-          memory: ${RABBITMQ_MEMORY_LIMIT:-2g}
-        reservations:
-          cpus: '0.5'
-          memory: 1g
+  # MinIO - S3-Compatible Object Storage (for object storage - future)
+  #minio:
+  #  image: minio/minio:${MINIO_VERSION:-latest}
+  #  container_name: gbmm-minio
+  #  restart: unless-stopped
+  #  command: server /data --console-address ":${MINIO_CONSOLE_PORT:-9001}"
+  #  environment:
+  #    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  #    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  #    MINIO_REGION: ${MINIO_REGION:-us-east-1}
+  #  ports:
+  #    - "${MINIO_PORT:-9000}:9000"
+  #    - "${MINIO_CONSOLE_PORT:-9001}:9001"
+  #  volumes:
+  #    - minio_data:/data
+  #  networks:
+  #    - data
+  #  healthcheck:
+  #    test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '${MINIO_CPU_LIMIT:-1}'
+  #        memory: ${MINIO_MEMORY_LIMIT:-2g}
+  #      reservations:
+  #        cpus: '0.5'
+  #        memory: 1g
+
+  # RabbitMQ - Message Broker (for messaging - future)
+  #rabbitmq:
+  #  image: rabbitmq:${RABBITMQ_VERSION:-3.12-management-alpine}
+  #  container_name: gbmm-rabbitmq
+  #  restart: unless-stopped
+  #  environment:
+  #    RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+  #    RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+  #    RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+  #  ports:
+  #    - "${RABBITMQ_PORT:-5672}:5672"
+  #    - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+  #  volumes:
+  #    - rabbitmq_data:/var/lib/rabbitmq
+  #  networks:
+  #    - data
+  #  healthcheck:
+  #    test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '${RABBITMQ_CPU_LIMIT:-2}'
+  #        memory: ${RABBITMQ_MEMORY_LIMIT:-2g}
+  #      reservations:
+  #        cpus: '0.5'
+  #        memory: 1g
 
   # ==============================================================================================
-  # OBSERVABILITY LAYER
+  # OBSERVABILITY LAYER (Commented out - not needed yet)
   # ==============================================================================================
-  # Note: The security layer (USP) will be added in docker-compose.yml when services are implemented
+  # Uncomment these services when observability features are needed
 
-  # Prometheus - Metrics Collection
-  prometheus:
-    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.45.0}
-    container_name: gbmm-prometheus
-    restart: unless-stopped
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-30d}'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--web.enable-lifecycle'
-    ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
-    volumes:
-      - ./config/prometheus:/etc/prometheus:ro
-      - prometheus_data:/prometheus
-    networks:
-      - observability
-      - service
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4g
-        reservations:
-          cpus: '1'
-          memory: 2g
+  # Prometheus - Metrics Collection (for observability - future)
+  #prometheus:
+  #  image: prom/prometheus:${PROMETHEUS_VERSION:-v2.45.0}
+  #  container_name: gbmm-prometheus
+  #  restart: unless-stopped
+  #  command:
+  #    - '--config.file=/etc/prometheus/prometheus.yml'
+  #    - '--storage.tsdb.path=/prometheus'
+  #    - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-30d}'
+  #    - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+  #    - '--web.console.templates=/usr/share/prometheus/consoles'
+  #    - '--web.enable-lifecycle'
+  #  ports:
+  #    - "${PROMETHEUS_PORT:-9090}:9090"
+  #  volumes:
+  #    - ./config/prometheus:/etc/prometheus:ro
+  #    - prometheus_data:/prometheus
+  #  networks:
+  #    - observability
+  #    - service
+  #  healthcheck:
+  #    test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '2'
+  #        memory: 4g
+  #      reservations:
+  #        cpus: '1'
+  #        memory: 2g
 
-  # Grafana - Visualization
-  grafana:
-    image: grafana/grafana:${GRAFANA_VERSION:-10.0.0}
-    container_name: gbmm-grafana
-    restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
-      GF_USERS_ALLOW_SIGN_UP: ${GRAFANA_ALLOW_SIGN_UP:-false}
-      GF_USERS_ALLOW_ORG_CREATE: false
-      GF_AUTH_ANONYMOUS_ENABLED: false
-      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3000}
-      GF_INSTALL_PLUGINS: grafana-piechart-panel
-    ports:
-      - "${GRAFANA_PORT:-3000}:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-    networks:
-      - observability
-    depends_on:
-      - prometheus
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 2g
-        reservations:
-          cpus: '0.5'
-          memory: 1g
+  # Grafana - Visualization (for observability - future)
+  #grafana:
+  #  image: grafana/grafana:${GRAFANA_VERSION:-10.0.0}
+  #  container_name: gbmm-grafana
+  #  restart: unless-stopped
+  #  environment:
+  #    GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+  #    GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+  #    GF_USERS_ALLOW_SIGN_UP: ${GRAFANA_ALLOW_SIGN_UP:-false}
+  #    GF_USERS_ALLOW_ORG_CREATE: false
+  #    GF_AUTH_ANONYMOUS_ENABLED: false
+  #    GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3000}
+  #    GF_INSTALL_PLUGINS: grafana-piechart-panel
+  #  ports:
+  #    - "${GRAFANA_PORT:-3000}:3000"
+  #  volumes:
+  #    - grafana_data:/var/lib/grafana
+  #    - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+  #    - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+  #  networks:
+  #    - observability
+  #  depends_on:
+  #    - prometheus
+  #  healthcheck:
+  #    test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '1'
+  #        memory: 2g
+  #      reservations:
+  #        cpus: '0.5'
+  #        memory: 1g
 
-  # Jaeger - Distributed Tracing
-  jaeger:
-    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.47}
-    container_name: gbmm-jaeger
-    restart: unless-stopped
-    environment:
-      COLLECTOR_ZIPKIN_HOST_PORT: :9411
-      COLLECTOR_OTLP_ENABLED: true
-      SPAN_STORAGE_TYPE: badger
-      BADGER_EPHEMERAL: false
-      BADGER_DIRECTORY_VALUE: /badger/data
-      BADGER_DIRECTORY_KEY: /badger/key
-    ports:
-      - "${JAEGER_AGENT_PORT:-6831}:6831/udp"
-      - "${JAEGER_COLLECTOR_PORT:-14268}:14268"
-      - "${JAEGER_ADMIN_PORT:-14269}:14269"
-      - "${JAEGER_QUERY_PORT:-16686}:16686"
-      - "4317:4317"  # OTLP gRPC
-      - "4318:4318"  # OTLP HTTP
-    volumes:
-      - jaeger_data:/badger
-    networks:
-      - observability
-      - service
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 2g
-        reservations:
-          cpus: '0.5'
-          memory: 1g
+  # Jaeger - Distributed Tracing (for observability - future)
+  #jaeger:
+  #  image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.47}
+  #  container_name: gbmm-jaeger
+  #  restart: unless-stopped
+  #  environment:
+  #    COLLECTOR_ZIPKIN_HOST_PORT: :9411
+  #    COLLECTOR_OTLP_ENABLED: true
+  #    SPAN_STORAGE_TYPE: badger
+  #    BADGER_EPHEMERAL: false
+  #    BADGER_DIRECTORY_VALUE: /badger/data
+  #    BADGER_DIRECTORY_KEY: /badger/key
+  #  ports:
+  #    - "${JAEGER_AGENT_PORT:-6831}:6831/udp"
+  #    - "${JAEGER_COLLECTOR_PORT:-14268}:14268"
+  #    - "${JAEGER_ADMIN_PORT:-14269}:14269"
+  #    - "${JAEGER_QUERY_PORT:-16686}:16686"
+  #    - "4317:4317"  # OTLP gRPC
+  #    - "4318:4318"  # OTLP HTTP
+  #  volumes:
+  #    - jaeger_data:/badger
+  #  networks:
+  #    - observability
+  #    - service
+  #  healthcheck:
+  #    test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '1'
+  #        memory: 2g
+  #      reservations:
+  #        cpus: '0.5'
+  #        memory: 1g
 
-  # Elasticsearch - Log Aggregation
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTICSEARCH_VERSION:-8.8.0}
-    container_name: gbmm-elasticsearch
-    restart: unless-stopped
-    environment:
-      - node.name=${ELASTICSEARCH_NODE_NAME:-es-node-1}
-      - cluster.name=${ELASTICSEARCH_CLUSTER_NAME:-gbmm-logs}
-      - discovery.type=${ELASTICSEARCH_DISCOVERY_TYPE:-single-node}
-      - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms${ELASTICSEARCH_HEAP_SIZE:-1g} -Xmx${ELASTICSEARCH_HEAP_SIZE:-1g}"
-      - xpack.security.enabled=true
-      - xpack.security.enrollment.enabled=false
-      - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD}
-    ports:
-      - "${ELASTICSEARCH_PORT:-9200}:9200"
-      - "9300:9300"
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
-    networks:
-      - observability
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    healthcheck:
-      test: ["CMD-SHELL", "curl -u elastic:${ELASTICSEARCH_PASSWORD} -f http://localhost:9200/_cluster/health || exit 1"]
-      interval: ${HEALTHCHECK_INTERVAL:-30s}
-      timeout: ${HEALTHCHECK_TIMEOUT:-10s}
-      retries: ${HEALTHCHECK_RETRIES:-3}
-      start_period: ${HEALTHCHECK_START_PERIOD:-60s}
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4g
-        reservations:
-          cpus: '1'
-          memory: 2g
+  # Elasticsearch - Log Aggregation (for observability - future)
+  #elasticsearch:
+  #  image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTICSEARCH_VERSION:-8.8.0}
+  #  container_name: gbmm-elasticsearch
+  #  restart: unless-stopped
+  #  environment:
+  #    - node.name=${ELASTICSEARCH_NODE_NAME:-es-node-1}
+  #    - cluster.name=${ELASTICSEARCH_CLUSTER_NAME:-gbmm-logs}
+  #    - discovery.type=${ELASTICSEARCH_DISCOVERY_TYPE:-single-node}
+  #    - bootstrap.memory_lock=true
+  #    - "ES_JAVA_OPTS=-Xms${ELASTICSEARCH_HEAP_SIZE:-1g} -Xmx${ELASTICSEARCH_HEAP_SIZE:-1g}"
+  #    - xpack.security.enabled=true
+  #    - xpack.security.enrollment.enabled=false
+  #    - ELASTIC_PASSWORD=${ELASTICSEARCH_PASSWORD}
+  #  ports:
+  #    - "${ELASTICSEARCH_PORT:-9200}:9200"
+  #    - "9300:9300"
+  #  volumes:
+  #    - elasticsearch_data:/usr/share/elasticsearch/data
+  #  networks:
+  #    - observability
+  #  ulimits:
+  #    memlock:
+  #      soft: -1
+  #      hard: -1
+  #    nofile:
+  #      soft: 65536
+  #      hard: 65536
+  #  healthcheck:
+  #    test: ["CMD-SHELL", "curl -u elastic:${ELASTICSEARCH_PASSWORD} -f http://localhost:9200/_cluster/health || exit 1"]
+  #    interval: ${HEALTHCHECK_INTERVAL:-30s}
+  #    timeout: ${HEALTHCHECK_TIMEOUT:-10s}
+  #    retries: ${HEALTHCHECK_RETRIES:-3}
+  #    start_period: ${HEALTHCHECK_START_PERIOD:-60s}
+  #  deploy:
+  #    resources:
+  #      limits:
+  #        cpus: '2'
+  #        memory: 4g
+  #      reservations:
+  #        cpus: '1'
+  #        memory: 2g
 
 # ================================================================================================
 # NETWORKS
 # ================================================================================================
 networks:
-  # DMZ Network - External-facing services
-  dmz:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${NETWORK_DMZ_SUBNET:-10.0.1.0/24}
-
-  # Service Network - Inter-service communication
-  service:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${NETWORK_SERVICE_SUBNET:-10.0.10.0/24}
-
-  # Data Network - Data layer components
+  # Data Network - Data layer components (postgres, redis)
   data:
     driver: bridge
     ipam:
       config:
         - subnet: ${NETWORK_DATA_SUBNET:-10.0.20.0/24}
 
+  # Future Networks (commented out - not needed yet)
+  # Uncomment when future services are enabled
+
+  # DMZ Network - External-facing services
+  #dmz:
+  #  driver: bridge
+  #  ipam:
+  #    config:
+  #      - subnet: ${NETWORK_DMZ_SUBNET:-10.0.1.0/24}
+
+  # Service Network - Inter-service communication
+  #service:
+  #  driver: bridge
+  #  ipam:
+  #    config:
+  #      - subnet: ${NETWORK_SERVICE_SUBNET:-10.0.10.0/24}
+
   # Observability Network - Monitoring and logging
-  observability:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${NETWORK_OBSERVABILITY_SUBNET:-10.0.30.0/24}
+  #observability:
+  #  driver: bridge
+  #  ipam:
+  #    config:
+  #      - subnet: ${NETWORK_OBSERVABILITY_SUBNET:-10.0.30.0/24}
 
 # ================================================================================================
 # VOLUMES
 # ================================================================================================
 volumes:
-  # Database volumes
+  # Active Database volumes
   postgres_data:
     driver: local
   redis_data:
     driver: local
 
+  # Future volumes (commented out - not needed yet)
+  # Uncomment when future services are enabled
+
   # Streaming volumes
-  zookeeper_data:
-    driver: local
-  zookeeper_logs:
-    driver: local
-  kafka_data:
-    driver: local
+  #zookeeper_data:
+  #  driver: local
+  #zookeeper_logs:
+  #  driver: local
+  #kafka_data:
+  #  driver: local
 
   # Storage volumes
-  minio_data:
-    driver: local
+  #minio_data:
+  #  driver: local
 
   # Message broker volumes
-  rabbitmq_data:
-    driver: local
+  #rabbitmq_data:
+  #  driver: local
 
   # Observability volumes
-  prometheus_data:
-    driver: local
-  grafana_data:
-    driver: local
-  jaeger_data:
-    driver: local
-  elasticsearch_data:
-    driver: local
+  #prometheus_data:
+  #  driver: local
+  #grafana_data:
+  #  driver: local
+  #jaeger_data:
+  #  driver: local
+  #elasticsearch_data:
+  #  driver: local

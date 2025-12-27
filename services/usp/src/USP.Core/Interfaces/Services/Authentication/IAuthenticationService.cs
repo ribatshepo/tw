@@ -87,10 +87,12 @@ public interface IAuthenticationService
     /// <summary>
     /// Resets a user's password using a reset token.
     /// </summary>
+    /// <param name="email">The user's email address</param>
     /// <param name="token">The password reset token</param>
     /// <param name="newPassword">The new password</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task ResetPasswordAsync(
+        string email,
         string token,
         string newPassword,
         CancellationToken cancellationToken = default);
