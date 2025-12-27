@@ -163,6 +163,41 @@ public static class SecurityMetrics
             Buckets = new[] { 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0 }
         });
 
+    // Vault Seal Metrics
+
+    /// <summary>
+    /// Vault seal status (0 = sealed, 1 = unsealed).
+    /// </summary>
+    public static readonly Gauge VaultSealStatus = Prometheus.Metrics.CreateGauge(
+        "usp_seal_status",
+        "Vault seal status (0=sealed, 1=unsealed)");
+
+    /// <summary>
+    /// Total number of vault initialization operations.
+    /// </summary>
+    public static readonly Counter VaultInitializationsTotal = Prometheus.Metrics.CreateCounter(
+        "usp_vault_initializations_total",
+        "Total number of vault initialization operations");
+
+    /// <summary>
+    /// Total number of unseal operations.
+    /// Labels: result (success, failure)
+    /// </summary>
+    public static readonly Counter UnsealOperationsTotal = Prometheus.Metrics.CreateCounter(
+        "usp_unseal_operations_total",
+        "Total number of unseal operations",
+        new CounterConfiguration
+        {
+            LabelNames = new[] { "result" }
+        });
+
+    /// <summary>
+    /// Total number of seal operations.
+    /// </summary>
+    public static readonly Counter SealOperationsTotal = Prometheus.Metrics.CreateCounter(
+        "usp_seal_operations_total",
+        "Total number of seal operations");
+
     // Helper Methods
 
     /// <summary>
@@ -237,5 +272,38 @@ public static class SecurityMetrics
     public static void RecordSecretOperation(string operation, string engine = "kv")
     {
         SecretOperationsTotal.WithLabels(operation, engine).Inc();
+    }
+
+    /// <summary>
+    /// Updates the vault seal status metric.
+    /// </summary>
+    public static void UpdateSealStatus(bool isSealed)
+    {
+        VaultSealStatus.Set(isSealed ? 0 : 1);
+    }
+
+    /// <summary>
+    /// Records a vault initialization.
+    /// </summary>
+    public static void RecordVaultInitialization()
+    {
+        VaultInitializationsTotal.Inc();
+    }
+
+    /// <summary>
+    /// Records an unseal operation.
+    /// </summary>
+    public static void RecordUnsealOperation(bool success)
+    {
+        var result = success ? "success" : "failure";
+        UnsealOperationsTotal.WithLabels(result).Inc();
+    }
+
+    /// <summary>
+    /// Records a seal operation.
+    /// </summary>
+    public static void RecordSealOperation()
+    {
+        SealOperationsTotal.Inc();
     }
 }

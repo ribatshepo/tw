@@ -7,6 +7,7 @@ using USP.Core.Domain.Entities.Integration;
 using USP.Core.Domain.Entities.PAM;
 using USP.Core.Domain.Entities.Secrets;
 using USP.Core.Domain.Entities.Security;
+using USP.Core.Domain.Entities.Vault;
 
 namespace USP.Infrastructure.Persistence;
 
@@ -39,6 +40,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<SecretVersion> SecretVersions => Set<SecretVersion>();
     public DbSet<EncryptionKey> EncryptionKeys => Set<EncryptionKey>();
     public DbSet<Certificate> Certificates => Set<Certificate>();
+
+    // Vault entities
+    public DbSet<SealConfiguration> SealConfigurations => Set<SealConfiguration>();
 
     // PAM entities
     public DbSet<Safe> Safes => Set<Safe>();

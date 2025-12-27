@@ -127,6 +127,7 @@ builder.Services.AddScoped<USP.Core.Interfaces.Services.Authentication.IMFAServi
 // Secrets Management Services
 builder.Services.AddScoped<USP.Core.Interfaces.Services.Secrets.IEncryptionService, USP.Infrastructure.Services.Secrets.EncryptionService>();
 builder.Services.AddScoped<USP.Core.Interfaces.Services.Secrets.ISecretService, USP.Infrastructure.Services.Secrets.SecretService>();
+builder.Services.AddSingleton<USP.Core.Interfaces.Services.Secrets.ISealService, USP.Infrastructure.Services.Secrets.SealService>();
 
 // Authorization Services
 builder.Services.AddScoped<USP.Core.Interfaces.Services.Authorization.IAuthorizationService, USP.Infrastructure.Services.Authorization.AuthorizationService>();

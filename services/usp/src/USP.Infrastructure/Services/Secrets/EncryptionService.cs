@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using USP.Core.Domain.Entities.Secrets;
 using USP.Core.Domain.Enums;
+using USP.Core.Exceptions;
 using USP.Core.Interfaces.Services.Secrets;
 using USP.Infrastructure.Persistence;
 
@@ -17,15 +18,18 @@ public class EncryptionService : IEncryptionService
     private readonly ApplicationDbContext _context;
     private readonly ILogger<EncryptionService> _logger;
     private readonly IMasterKeyProvider _masterKeyProvider;
+    private readonly ISealService _sealService;
 
     public EncryptionService(
         ApplicationDbContext context,
         ILogger<EncryptionService> logger,
-        IMasterKeyProvider masterKeyProvider)
+        IMasterKeyProvider masterKeyProvider,
+        ISealService sealService)
     {
         _context = context;
         _logger = logger;
         _masterKeyProvider = masterKeyProvider;
+        _sealService = sealService;
 
         _logger.LogInformation(
             "EncryptionService initialized with master key version: {KeyVersion}",
@@ -128,6 +132,13 @@ public class EncryptionService : IEncryptionService
         string? context = null,
         CancellationToken cancellationToken = default)
     {
+        // Check if vault is sealed
+        if (_sealService.IsSealed())
+        {
+            _logger.LogWarning("Attempted to encrypt data while vault is sealed");
+            throw new VaultSealedException();
+        }
+
         var key = await _context.Set<EncryptionKey>()
             .FirstOrDefaultAsync(k => k.Name == keyName && k.DeletedAt == null, cancellationToken)
             ?? throw new InvalidOperationException($"Encryption key '{keyName}' not found");
@@ -158,6 +169,13 @@ public class EncryptionService : IEncryptionService
         string? context = null,
         CancellationToken cancellationToken = default)
     {
+        // Check if vault is sealed
+        if (_sealService.IsSealed())
+        {
+            _logger.LogWarning("Attempted to decrypt data while vault is sealed");
+            throw new VaultSealedException();
+        }
+
         var key = await _context.Set<EncryptionKey>()
             .FirstOrDefaultAsync(k => k.Name == keyName && k.DeletedAt == null, cancellationToken)
             ?? throw new InvalidOperationException($"Encryption key '{keyName}' not found");
