@@ -77,22 +77,55 @@ public class SealService : ISealService
         }
         var rootToken = Convert.ToBase64String(rootTokenBytes);
 
-        // Encrypt the master key with itself for verification
-        // (In production, this would be encrypted with a KEK)
-        byte[] encryptedMasterKey;
-        using (var aes = Aes.Create())
+        // Encrypt the master key with KEK (Key Encryption Key)
+        // KEK is stored separately from the master key (environment variable)
+        var kekBase64 = Environment.GetEnvironmentVariable("USP_KEY_ENCRYPTION_KEY");
+        if (string.IsNullOrEmpty(kekBase64))
         {
-            aes.Key = masterKey;
+            _logger.LogError("USP_KEY_ENCRYPTION_KEY environment variable not set");
+            throw new InvalidOperationException("USP_KEY_ENCRYPTION_KEY environment variable not set. " +
+                "This is required to securely encrypt the master key. Generate a KEK using: openssl rand -base64 32");
+        }
+
+        byte[] kek;
+        try
+        {
+            kek = Convert.FromBase64String(kekBase64);
+        }
+        catch (FormatException)
+        {
+            _logger.LogError("USP_KEY_ENCRYPTION_KEY is not valid Base64");
+            throw new InvalidOperationException("USP_KEY_ENCRYPTION_KEY must be a valid Base64-encoded string");
+        }
+
+        if (kek.Length != 32)
+        {
+            _logger.LogError("USP_KEY_ENCRYPTION_KEY must be 32 bytes (256 bits), but was {Length} bytes", kek.Length);
+            Array.Clear(kek, 0, kek.Length);
+            throw new InvalidOperationException("USP_KEY_ENCRYPTION_KEY must be 32 bytes (256 bits) for AES-256 encryption");
+        }
+
+        byte[] encryptedMasterKey;
+        try
+        {
+            using var aes = Aes.Create();
+            aes.Key = kek;
             aes.GenerateIV();
 
             using var encryptor = aes.CreateEncryptor();
-            var plaintext = masterKey; // Encrypt the master key with itself
-            var ciphertext = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
+            var ciphertext = encryptor.TransformFinalBlock(masterKey, 0, masterKey.Length);
 
             // Prepend IV to ciphertext
             encryptedMasterKey = new byte[aes.IV.Length + ciphertext.Length];
             Buffer.BlockCopy(aes.IV, 0, encryptedMasterKey, 0, aes.IV.Length);
             Buffer.BlockCopy(ciphertext, 0, encryptedMasterKey, aes.IV.Length, ciphertext.Length);
+
+            _logger.LogInformation("Master key encrypted with KEK successfully");
+        }
+        finally
+        {
+            // Clear KEK from memory immediately after use
+            Array.Clear(kek, 0, kek.Length);
         }
 
         // Create or update seal configuration
@@ -140,8 +173,9 @@ public class SealService : ISealService
     {
         _logger.LogInformation("Processing unseal key");
 
-        // Get seal configuration
+        // Get seal configuration (AsNoTracking to ensure fresh read from database)
         var config = await _context.SealConfigurations
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == "default", cancellationToken);
 
         if (config == null || !config.Initialized)
@@ -174,6 +208,9 @@ public class SealService : ISealService
             }
         }
 
+        bool shouldUnseal = false;
+        byte[]? reconstructedKey = null;
+
         lock (_lock)
         {
             // Check if this key was already submitted
@@ -195,7 +232,7 @@ public class SealService : ISealService
                 try
                 {
                     // Reconstruct the master key
-                    var reconstructedKey = ShamirSecretSharing.Combine(_unsealKeysSubmitted.ToArray());
+                    reconstructedKey = ShamirSecretSharing.Combine(_unsealKeysSubmitted.ToArray());
 
                     // Verify the reconstructed key by decrypting the stored encrypted master key
                     bool isValid = VerifyMasterKey(reconstructedKey, config.EncryptedMasterKey!);
@@ -210,11 +247,7 @@ public class SealService : ISealService
                     // Store master key in memory
                     _masterKey = reconstructedKey;
                     _unsealKeysSubmitted.Clear();
-
-                    // Update last unsealed timestamp
-                    config.LastUnsealedAt = DateTime.UtcNow;
-                    config.UpdatedAt = DateTime.UtcNow;
-                    _context.SaveChangesAsync(cancellationToken).GetAwaiter().GetResult();
+                    shouldUnseal = true;
 
                     _logger.LogInformation("Vault unsealed successfully");
 
@@ -232,6 +265,20 @@ public class SealService : ISealService
 
                     throw;
                 }
+            }
+        }
+
+        // Update timestamp outside of lock (can use async here)
+        if (shouldUnseal)
+        {
+            var trackedConfig = await _context.SealConfigurations
+                .FirstOrDefaultAsync(c => c.Id == "default", cancellationToken);
+
+            if (trackedConfig != null)
+            {
+                trackedConfig.LastUnsealedAt = DateTime.UtcNow;
+                trackedConfig.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -283,7 +330,7 @@ public class SealService : ISealService
             .FirstOrDefaultAsync(c => c.Id == "default", cancellationToken);
 
         bool initialized = config?.Initialized == true;
-        bool sealed = IsSealed();
+        bool isSealed = IsSealed();
         int progress = 0;
 
         lock (_lock)
@@ -293,11 +340,11 @@ public class SealService : ISealService
 
         return new SealStatus
         {
-            Sealed = sealed,
+            Sealed = isSealed,
             Initialized = initialized,
             Threshold = config?.SecretThreshold ?? 0,
             SecretShares = config?.SecretShares ?? 0,
-            Progress = sealed ? progress : 0,
+            Progress = isSealed ? progress : 0,
             ClusterName = config?.ClusterName,
             ClusterId = config?.ClusterId,
             Version = config?.Version ?? "1.0.0"
@@ -326,33 +373,73 @@ public class SealService : ISealService
 
     /// <summary>
     /// Verifies that the reconstructed master key is correct by decrypting
-    /// the encrypted master key stored during initialization.
+    /// the encrypted master key stored during initialization using the KEK.
     /// </summary>
     private bool VerifyMasterKey(byte[] masterKey, byte[] encryptedMasterKey)
     {
         try
         {
-            using var aes = Aes.Create();
-            aes.Key = masterKey;
+            // Read KEK from environment variable
+            var kekBase64 = Environment.GetEnvironmentVariable("USP_KEY_ENCRYPTION_KEY");
+            if (string.IsNullOrEmpty(kekBase64))
+            {
+                _logger.LogError("USP_KEY_ENCRYPTION_KEY not set during master key verification");
+                return false;
+            }
 
-            // Extract IV from encrypted data
-            var iv = new byte[aes.IV.Length];
-            Buffer.BlockCopy(encryptedMasterKey, 0, iv, 0, iv.Length);
-            aes.IV = iv;
+            byte[] kek;
+            try
+            {
+                kek = Convert.FromBase64String(kekBase64);
+            }
+            catch (FormatException)
+            {
+                _logger.LogError("USP_KEY_ENCRYPTION_KEY is not valid Base64");
+                return false;
+            }
 
-            // Extract ciphertext
-            var ciphertext = new byte[encryptedMasterKey.Length - iv.Length];
-            Buffer.BlockCopy(encryptedMasterKey, iv.Length, ciphertext, 0, ciphertext.Length);
+            if (kek.Length != 32)
+            {
+                _logger.LogError("USP_KEY_ENCRYPTION_KEY must be 32 bytes, but was {Length} bytes", kek.Length);
+                Array.Clear(kek, 0, kek.Length);
+                return false;
+            }
 
-            // Decrypt
-            using var decryptor = aes.CreateDecryptor();
-            var decrypted = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
+            try
+            {
+                using var aes = Aes.Create();
+                aes.Key = kek;
 
-            // Verify that decrypted value matches the master key
-            return decrypted.SequenceEqual(masterKey);
+                // Extract IV from encrypted data
+                var iv = new byte[aes.IV.Length];
+                Buffer.BlockCopy(encryptedMasterKey, 0, iv, 0, iv.Length);
+                aes.IV = iv;
+
+                // Extract ciphertext
+                var ciphertext = new byte[encryptedMasterKey.Length - iv.Length];
+                Buffer.BlockCopy(encryptedMasterKey, iv.Length, ciphertext, 0, ciphertext.Length);
+
+                // Decrypt
+                using var decryptor = aes.CreateDecryptor();
+                var decrypted = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
+
+                // Verify that decrypted value matches the master key
+                var isValid = decrypted.SequenceEqual(masterKey);
+
+                // Clear decrypted data from memory
+                Array.Clear(decrypted, 0, decrypted.Length);
+
+                return isValid;
+            }
+            finally
+            {
+                // Clear KEK from memory
+                Array.Clear(kek, 0, kek.Length);
+            }
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error verifying master key");
             return false;
         }
     }

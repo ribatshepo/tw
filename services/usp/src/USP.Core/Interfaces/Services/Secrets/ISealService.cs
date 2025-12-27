@@ -56,6 +56,13 @@ public interface ISealService
     /// Resets the unseal progress (clears all submitted unseal keys).
     /// </summary>
     Task ResetUnsealProgressAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the current master key (only available when unsealed).
+    /// Used internally by encryption services to encrypt/decrypt key material.
+    /// </summary>
+    /// <returns>The master key bytes if unsealed, null if sealed</returns>
+    byte[]? GetMasterKey();
 }
 
 /// <summary>

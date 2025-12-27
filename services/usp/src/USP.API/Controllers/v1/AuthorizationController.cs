@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using USP.Core.Domain.Enums;
 using USP.Core.Interfaces.Services.Authorization;
+using AuthzService = USP.Core.Interfaces.Services.Authorization.IAuthorizationService;
 
 namespace USP.API.Controllers.v1;
 
@@ -14,11 +15,11 @@ namespace USP.API.Controllers.v1;
 [Produces("application/json")]
 public class AuthorizationController : ControllerBase
 {
-    private readonly IAuthorizationService _authzService;
+    private readonly AuthzService _authzService;
     private readonly ILogger<AuthorizationController> _logger;
 
     public AuthorizationController(
-        IAuthorizationService authzService,
+        AuthzService authzService,
         ILogger<AuthorizationController> logger)
     {
         _authzService = authzService;
@@ -277,7 +278,7 @@ public class BatchAuthorizationCheckRequest
     public Dictionary<string, object>? Context { get; set; }
 }
 
-public class AuthorizationCheckResponse
+internal class AuthorizationCheckResponse
 {
     public required bool IsAuthorized { get; set; }
     public required string Resource { get; set; }
@@ -287,7 +288,7 @@ public class AuthorizationCheckResponse
     public string? PolicyType { get; set; }
 }
 
-public class UserPermissionsResponse
+internal class UserPermissionsResponse
 {
     public required string UserId { get; set; }
     public required List<string> Permissions { get; set; }
@@ -300,7 +301,7 @@ public class PolicySimulationRequest
     public Dictionary<string, object>? Context { get; set; }
 }
 
-public class PolicySimulationResponse
+internal class PolicySimulationResponse
 {
     public required bool IsAuthorized { get; set; }
     public List<string> UserRoles { get; set; } = new();
@@ -309,7 +310,7 @@ public class PolicySimulationResponse
     public string? Explanation { get; set; }
 }
 
-public class EvaluatedPolicyInfo
+internal class EvaluatedPolicyInfo
 {
     public required string PolicyId { get; set; }
     public required string PolicyName { get; set; }
@@ -320,13 +321,13 @@ public class EvaluatedPolicyInfo
     public string? MatchReason { get; set; }
 }
 
-public class UserPoliciesResponse
+internal class UserPoliciesResponse
 {
     public required string UserId { get; set; }
     public required List<PolicyInfo> Policies { get; set; }
 }
 
-public class PolicyInfo
+internal class PolicyInfo
 {
     public required string Id { get; set; }
     public required string Name { get; set; }

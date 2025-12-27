@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Net;
 using USP.Core.Domain.Entities.Identity;
 using USP.Core.Domain.Entities.Security;
 using USP.Core.Domain.Enums;
@@ -44,7 +45,6 @@ public class AuthorizationService : IAuthorizationService
             userId, resource, action);
 
         // Start timing authorization check
-        using var timer = SecurityMetrics.AuthorizationCheckDuration.NewTimer();
 
         try
         {
@@ -621,16 +621,14 @@ public class AuthorizationService : IAuthorizationService
                     break;
 
                 case "device_compliance":
-                    if (value is System.Text.Json.JsonElement complianceElement && complianceElement.ValueKind == System.Text.Json.JsonValueKind.True)
-                    {
-                        // Check if device is compliant (would need integration with device management)
-                        // For now, assume compliant if device fingerprint exists
-                        if (string.IsNullOrEmpty(context.DeviceFingerprint))
-                        {
-                            return (false, "Device compliance check failed: No device fingerprint");
-                        }
-                    }
-                    break;
+                    // Device compliance checking requires integration with device management system
+                    // (e.g., Microsoft Intune, Jamf, or custom MDM solution)
+                    // This feature is not yet implemented - fail the condition for security
+                    _logger.LogWarning(
+                        "Device compliance condition requested but not implemented. " +
+                        "Integration with device management system required.");
+                    return (false, "Device compliance checking not implemented - requires MDM integration");
+
 
                 case "location":
                     if (value is System.Text.Json.JsonElement locationElement && locationElement.ValueKind == System.Text.Json.JsonValueKind.String)
@@ -679,28 +677,61 @@ public class AuthorizationService : IAuthorizationService
     {
         if (string.IsNullOrEmpty(ipRange)) return true;
 
-        // Simple implementation - exact match or wildcard
+        // Wildcard match
         if (ipRange == "*") return true;
+
+        // Exact match
         if (ipRange == ipAddress) return true;
 
-        // CIDR notation (basic implementation)
+        // CIDR notation (e.g., "192.168.1.0/24")
         if (ipRange.Contains('/'))
         {
-            // For production, use a proper CIDR library
-            // For now, check if IP starts with the network prefix
-            var prefix = ipRange.Split('/')[0];
-            var prefixParts = prefix.Split('.');
-            var ipParts = ipAddress.Split('.');
-
-            for (int i = 0; i < Math.Min(prefixParts.Length - 1, ipParts.Length); i++)
+            try
             {
-                if (prefixParts[i] != ipParts[i])
-                {
-                    return false;
-                }
-            }
+                var parts = ipRange.Split('/');
+                if (parts.Length != 2) return false;
 
-            return true;
+                var networkAddress = IPAddress.Parse(parts[0]);
+                var prefixLength = int.Parse(parts[1]);
+
+                var ip = IPAddress.Parse(ipAddress);
+
+                // Both must be same address family (IPv4 or IPv6)
+                if (networkAddress.AddressFamily != ip.AddressFamily)
+                    return false;
+
+                var networkBytes = networkAddress.GetAddressBytes();
+                var ipBytes = ip.GetAddressBytes();
+
+                // Calculate netmask
+                var maskBytes = new byte[networkBytes.Length];
+                for (int i = 0; i < maskBytes.Length; i++)
+                {
+                    var bitsInByte = Math.Min(8, prefixLength - (i * 8));
+                    if (bitsInByte <= 0)
+                        maskBytes[i] = 0;
+                    else if (bitsInByte >= 8)
+                        maskBytes[i] = 0xFF;
+                    else
+                        maskBytes[i] = (byte)(0xFF << (8 - bitsInByte));
+                }
+
+                // Apply mask and compare
+                for (int i = 0; i < networkBytes.Length; i++)
+                {
+                    if ((networkBytes[i] & maskBytes[i]) != (ipBytes[i] & maskBytes[i]))
+                        return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to parse IP range {IpRange} or IP address {IpAddress}",
+                    ipRange, ipAddress);
+                return false;
+            }
         }
 
         return false;

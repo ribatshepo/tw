@@ -40,6 +40,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
     public DbSet<SecretVersion> SecretVersions => Set<SecretVersion>();
     public DbSet<EncryptionKey> EncryptionKeys => Set<EncryptionKey>();
     public DbSet<Certificate> Certificates => Set<Certificate>();
+    public DbSet<TransitKey> TransitKeys => Set<TransitKey>();
 
     // Vault entities
     public DbSet<SealConfiguration> SealConfigurations => Set<SealConfiguration>();
@@ -77,6 +78,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
         builder.Entity<AccessPolicy>().HasQueryFilter(p => p.DeletedAt == null);
         builder.Entity<EncryptionKey>().HasQueryFilter(k => k.DeletedAt == null);
         builder.Entity<Certificate>().HasQueryFilter(c => c.DeletedAt == null);
+        builder.Entity<TransitKey>().HasQueryFilter(k => k.DeletedAt == null);
         builder.Entity<Safe>().HasQueryFilter(s => s.DeletedAt == null);
         builder.Entity<PrivilegedAccount>().HasQueryFilter(a => a.DeletedAt == null);
         builder.Entity<RotationPolicy>().HasQueryFilter(p => p.DeletedAt == null);

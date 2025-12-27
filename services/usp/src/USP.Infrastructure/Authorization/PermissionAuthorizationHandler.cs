@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 using USP.Core.Interfaces.Services.Authorization;
+using AuthzService = USP.Core.Interfaces.Services.Authorization.IAuthorizationService;
 
 namespace USP.Infrastructure.Authorization;
 
@@ -12,12 +13,12 @@ namespace USP.Infrastructure.Authorization;
 /// </summary>
 public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionAuthorizationRequirement>
 {
-    private readonly IAuthorizationService _authorizationService;
+    private readonly AuthzService _authorizationService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<PermissionAuthorizationHandler> _logger;
 
     public PermissionAuthorizationHandler(
-        IAuthorizationService authorizationService,
+        AuthzService authorizationService,
         IHttpContextAccessor httpContextAccessor,
         ILogger<PermissionAuthorizationHandler> logger)
     {

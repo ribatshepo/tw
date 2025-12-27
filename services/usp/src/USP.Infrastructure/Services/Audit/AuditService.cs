@@ -46,7 +46,6 @@ public class AuditService : IAuditService
         CancellationToken cancellationToken = default)
     {
         // Start timing audit event write
-        using var timer = SecurityMetrics.AuditEventWriteDuration.NewTimer();
 
         try
         {
@@ -69,9 +68,17 @@ public class AuditService : IAuditService
             // Encrypt sensitive data if details contain sensitive information
             if (!string.IsNullOrEmpty(details))
             {
-                auditLog.EncryptedData = await _encryptionService.EncryptAsync(details, cancellationToken);
+                auditLog.EncryptedData = await _encryptionService.EncryptAsync("audit-log", details, cancellationToken: cancellationToken);
                 auditLog.Details = null; // Clear plaintext after encryption
             }
+
+            // Compute hash chain
+            var previousLog = await _context.AuditLogs
+                .OrderByDescending(a => a.Timestamp)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            auditLog.PreviousHash = previousLog?.CurrentHash;
+            auditLog.CurrentHash = ComputeAuditHash(auditLog);
 
             _context.AuditLogs.Add(auditLog);
             await _context.SaveChangesAsync(cancellationToken);
@@ -451,19 +458,42 @@ public class AuditService : IAuditService
             var verifiedRecords = 0;
             var invalidRecordIds = new List<string>();
 
-            // For now, basic verification (can be enhanced with hash chains)
+            // Verify hash chain integrity
+            AuditLog? previousLog = null;
             foreach (var log in logs)
             {
                 // Verify required fields are present
-                if (!string.IsNullOrEmpty(log.Id) &&
-                    log.Timestamp != default)
-                {
-                    verifiedRecords++;
-                }
-                else
+                if (string.IsNullOrEmpty(log.Id) || log.Timestamp == default)
                 {
                     invalidRecordIds.Add(log.Id);
+                    _logger.LogWarning("Audit log {LogId} missing required fields", log.Id);
+                    continue;
                 }
+
+                // Verify hash chain links to previous log
+                var expectedPreviousHash = previousLog?.CurrentHash;
+                if (log.PreviousHash != expectedPreviousHash)
+                {
+                    invalidRecordIds.Add(log.Id);
+                    _logger.LogWarning(
+                        "Hash chain broken at log {LogId}: expected previous hash {Expected}, got {Actual}",
+                        log.Id, expectedPreviousHash, log.PreviousHash);
+                    continue;
+                }
+
+                // Verify current hash is correct
+                var expectedHash = ComputeAuditHash(log);
+                if (log.CurrentHash != expectedHash)
+                {
+                    invalidRecordIds.Add(log.Id);
+                    _logger.LogWarning(
+                        "Hash verification failed for log {LogId}: expected {Expected}, got {Actual}",
+                        log.Id, expectedHash, log.CurrentHash);
+                    continue;
+                }
+
+                verifiedRecords++;
+                previousLog = log;
             }
 
             return new AuditIntegrityResult
@@ -579,5 +609,19 @@ public class AuditService : IAuditService
             AuditEventType.AccountCheckedIn => "checkin",
             _ => eventType.ToString().ToLowerInvariant()
         };
+    }
+
+    /// <summary>
+    /// Computes a SHA-256 hash of the audit log entry for tamper detection.
+    /// Hash includes all critical fields plus the previous hash to create a blockchain-style chain.
+    /// </summary>
+    private string ComputeAuditHash(AuditLog log)
+    {
+        var data = $"{log.Id}|{log.Timestamp:O}|{log.EventType}|{log.UserId ?? ""}|" +
+                   $"{log.Resource ?? ""}|{log.Action ?? ""}|{log.Success}|{log.PreviousHash ?? ""}";
+
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(data));
+        return Convert.ToBase64String(hashBytes);
     }
 }

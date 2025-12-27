@@ -53,7 +53,7 @@ public class AuditMiddleware
         var correlationId = GetOrCreateCorrelationId(context);
         var method = context.Request.Method;
         var path = context.Request.Path;
-        var queryString = context.Request.QueryString.ToString();
+        var queryString = context.Request.QueryString;
 
         // Build resource path
         var resource = $"{method} {path}";
@@ -207,15 +207,15 @@ public class AuditMiddleware
 
         // Authentication events
         if (pathValue.Contains("/auth/login"))
-            return AuditEventType.UserLogin;
+            return AuditEventType.AuthenticationSuccess;
         if (pathValue.Contains("/auth/logout"))
-            return AuditEventType.UserLogout;
+            return AuditEventType.Logout;
         if (pathValue.Contains("/auth/register"))
-            return AuditEventType.UserCreated;
+            return AuditEventType.ApiRequest; // Generic for now
         if (pathValue.Contains("/auth/change-password"))
             return AuditEventType.PasswordChanged;
         if (pathValue.Contains("/mfa"))
-            return AuditEventType.MFAEnabled;
+            return AuditEventType.MFASuccess; // Using existing MFA event type
 
         // Secret events
         if (pathValue.Contains("/secrets"))
@@ -225,7 +225,7 @@ public class AuditMiddleware
                 "POST" => AuditEventType.SecretWritten,
                 "GET" => AuditEventType.SecretRead,
                 "DELETE" => AuditEventType.SecretDeleted,
-                "PUT" => AuditEventType.SecretUpdated,
+                "PUT" => AuditEventType.SecretWritten, // Using SecretWritten for updates
                 _ => AuditEventType.ApiRequest
             };
         }
@@ -233,7 +233,7 @@ public class AuditMiddleware
         // Authorization events
         if (pathValue.Contains("/authz") || pathValue.Contains("/roles") || pathValue.Contains("/policies"))
         {
-            return AuditEventType.PolicyCreated;
+            return AuditEventType.ApiRequest; // Generic for now
         }
 
         // PAM events
@@ -244,11 +244,11 @@ public class AuditMiddleware
 
         // Rotation events
         if (pathValue.Contains("/rotation"))
-            return AuditEventType.SecretRotated;
+            return AuditEventType.ApiRequest; // Generic for now
 
         // Audit events
         if (pathValue.Contains("/audit"))
-            return AuditEventType.AuditLogExported;
+            return AuditEventType.AuditExported; // Using existing audit export event type
 
         // Default to generic API request
         return AuditEventType.ApiRequest;

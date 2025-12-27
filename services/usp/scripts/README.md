@@ -16,8 +16,15 @@ For a complete bootstrap setup, run these scripts in order:
 # 3. Generate JWT signing keys
 ./generate-jwt-keys.sh
 
-# 4. (Optional) Generate master encryption key separately
+# 4. Generate master encryption key AND KEK (REQUIRED for vault)
 ./generate-master-key.sh
+
+# Output will be:
+#   USP_Encryption__MasterKey=<base64-master-key>
+#   USP_KEY_ENCRYPTION_KEY=<base64-kek>
+#
+# CRITICAL: Copy both values to your .env file or environment
+# The KEK is required to encrypt the master key at rest
 ```
 
 After running these scripts, proceed to database setup:
@@ -162,26 +169,54 @@ cp keys/jwt-public.pem keys/jwt-public.pem.backup.$(date +%Y%m%d)
 
 ### 4. `generate-master-key.sh`
 
-**Purpose**: Generate master encryption key for encrypting secrets in database
+**Purpose**: Generate master encryption key AND Key Encryption Key (KEK) for vault operations
 
 **What it generates**:
-- 256-bit (32-byte) random key
-- Base64-encoded for easy storage
+- **Master Encryption Key**: 256-bit (32-byte) random key for encrypting secrets in database
+- **KEK (Key Encryption Key)**: 256-bit (32-byte) random key for encrypting the master key at rest
+- Both are Base64-encoded for easy storage
 
 **Output**:
-- Displays key to stdout
-- Optionally writes to file (e.g., `.env`)
+- Displays both keys to stdout with environment variable names
+- Format:
+  ```
+  USP_Encryption__MasterKey=<base64-key>
+  USP_KEY_ENCRYPTION_KEY=<base64-kek>
+  ```
 
 **Usage**:
 ```bash
-./generate-master-key.sh                        # Display only
-./generate-master-key.sh --output .env          # Write to .env (overwrite)
-./generate-master-key.sh --output .env --append # Append to .env
+./generate-master-key.sh                        # Display both keys to stdout
 ```
 
+**Security Architecture**:
+
+The USP vault uses a **two-layer encryption approach**:
+
+1. **KEK (Key Encryption Key)**:
+   - Stored in environment variable: `USP_KEY_ENCRYPTION_KEY`
+   - Used ONLY to encrypt/decrypt the master key at rest
+   - Never used to encrypt actual secrets
+   - Should be stored separately from the master key
+
+2. **Master Encryption Key**:
+   - Stored in environment variable: `USP_Encryption__MasterKey` (for bootstrap only)
+   - After vault initialization, split using **Shamir's Secret Sharing** (5 shares, 3 threshold)
+   - Reconstructed during vault unseal by combining 3 of 5 shares
+   - Used to encrypt ALL secrets in the database
+
+**Why Two Keys?**
+
+This follows **NIST SP 800-57** key management best practices:
+- **Defense in Depth**: If one key is compromised, secrets are still protected
+- **Key Hierarchy**: KEK provides a root of trust for the master key
+- **Separation of Duties**: Different people can hold KEK vs. unseal keys
+- **Never Self-Encrypt**: The master key is NEVER encrypted with itself (security anti-pattern)
+
 **Security**:
-- ⚠️ **CRITICAL**: This key encrypts ALL secrets in the database
-- If this key is lost, ALL encrypted secrets are UNRECOVERABLE
+- ⚠️ **CRITICAL**: Both keys are required for vault operation
+- ⚠️ **CRITICAL**: If KEK is lost, the master key CANNOT be decrypted, making ALL secrets UNRECOVERABLE
+- ⚠️ **CRITICAL**: If all unseal keys are lost, the vault CANNOT be unsealed
 - MUST be backed up in multiple secure locations
 - Should be stored in a Hardware Security Module (HSM) in production
 
@@ -191,21 +226,70 @@ cp keys/jwt-public.pem keys/jwt-public.pem.backup.$(date +%Y%m%d)
 - Disaster recovery (restore from backup)
 
 **Backup Strategy**:
-1. **Immediate Backup**: Store in password manager (1Password, LastPass, etc.)
-2. **Secure Storage**: Store in HSM or cloud KMS (AWS KMS, Azure Key Vault, Google Cloud KMS)
-3. **Physical Backup**: Print and store in secure physical location (safe, safety deposit box)
-4. **Redundancy**: Keep backups in multiple geographic locations
+
+**For KEK (Key Encryption Key)**:
+1. **Primary Storage**: HSM or cloud KMS (AWS KMS, Azure Key Vault, Google Cloud KMS)
+2. **Secondary Backup**: Password manager (1Password, LastPass, Bitwarden)
+3. **Tertiary Backup**: Encrypted offline storage (hardware token, encrypted USB)
+4. **Emergency Backup**: Physical printout in secure location (safe, safety deposit box)
+5. **Separation**: Store KEK separately from master key and unseal keys
+
+**For Unseal Keys** (Shamir shares):
+1. **Distribution**: Give each share to different trusted individuals (5 people minimum)
+2. **Storage**: Each share holder stores their key in a password manager
+3. **Documentation**: Record which share belongs to which person (without recording the share itself)
+4. **Threshold**: Only 3 of 5 shares needed to unseal vault
+5. **Geographic Distribution**: Share holders should be in different locations
+
+**Vault Initialization Workflow**:
+```bash
+# 1. Generate keys
+./generate-master-key.sh
+
+# Output:
+#   USP_Encryption__MasterKey=<master-key>
+#   USP_KEY_ENCRYPTION_KEY=<kek>
+
+# 2. Set environment variables
+export USP_KEY_ENCRYPTION_KEY="<kek-from-output>"
+export USP_Encryption__MasterKey="<master-key-from-output>"
+
+# 3. Start USP and initialize vault
+curl -X POST https://localhost:8443/v1/sys/init \
+  -d '{"secret_shares": 5, "secret_threshold": 3}'
+
+# 4. Save the 5 unseal keys returned (distribute to 5 different people)
+# 5. Save the root token securely
+# 6. IMMEDIATELY backup the KEK to multiple locations
+# 7. Delete USP_Encryption__MasterKey from environment (no longer needed after init)
+```
 
 **Key Rotation**:
-```bash
-# WARNING: Requires re-encryption of all secrets!
-# 1. Generate new key
-./generate-master-key.sh --output .env.new
 
-# 2. Deploy new key with re-encryption logic
-# 3. Verify all secrets can be decrypted
-# 4. Remove old key
-# 5. Update all backups
+**Rotating KEK** (annually recommended):
+```bash
+# WARNING: Requires re-encryption of master key!
+# 1. Generate new KEK
+./generate-master-key.sh  # Use only the KEK output
+
+# 2. Update environment variable with new KEK
+export USP_KEY_ENCRYPTION_KEY="<new-kek>"
+
+# 3. Vault will automatically re-encrypt master key with new KEK on next unseal
+# 4. Verify vault can unseal successfully
+# 5. Update all KEK backups with new value
+# 6. Securely destroy old KEK
+```
+
+**Rotating Master Key** (requires vault re-initialization):
+```bash
+# WARNING: This is a DESTRUCTIVE operation!
+# Requires re-encryption of ALL secrets in the database
+# 1. Export all secrets from vault
+# 2. Re-initialize vault with new master key
+# 3. Import all secrets back into vault
+# 4. Verify all secrets are accessible
+# 5. Distribute new unseal keys
 ```
 
 ---
@@ -292,7 +376,11 @@ For production:
 4. Establish key custodian roles and responsibilities
 
 **Backup Checklist**:
-- [ ] Master encryption key backed up in 3+ secure locations
+- [ ] **KEK (Key Encryption Key)** backed up in 4+ secure locations (HSM + password manager + offline + physical)
+- [ ] **Unseal keys** distributed to 5 different people (3 required to unseal)
+- [ ] Record of which person holds which unseal share (without recording the share value)
+- [ ] Root token backed up in secure location
+- [ ] Master encryption key (**NOT needed after vault init** - stored encrypted in database)
 - [ ] JWT private key backed up
 - [ ] Database credentials documented
 - [ ] TLS certificates and private keys backed up
@@ -302,6 +390,95 @@ For production:
 ---
 
 ## Troubleshooting
+
+### KEK (Key Encryption Key) Issues
+
+**Error: "USP_KEY_ENCRYPTION_KEY environment variable not set"**
+
+```bash
+# Verify KEK is set
+echo $USP_KEY_ENCRYPTION_KEY
+
+# If empty, set it
+export USP_KEY_ENCRYPTION_KEY="<your-kek-from-generate-master-key.sh>"
+
+# For permanent setup, add to .env or systemd service file
+```
+
+**Error: "USP_KEY_ENCRYPTION_KEY must be 32 bytes (256 bits)"**
+
+```bash
+# Verify KEK is valid Base64 and 32 bytes when decoded
+echo -n "$USP_KEY_ENCRYPTION_KEY" | base64 -d | wc -c
+# Should output: 32
+
+# If not 32 bytes, regenerate KEK
+./generate-master-key.sh  # Use the KEK output
+```
+
+**Error: "Invalid unseal keys - master key verification failed"**
+
+This means the KEK has changed since vault initialization:
+
+```bash
+# 1. Restore correct KEK from backup
+export USP_KEY_ENCRYPTION_KEY="<original-kek-from-backup>"
+
+# 2. Try unsealing again
+curl -X POST https://localhost:8443/v1/sys/unseal \
+  -d '{"key": "<unseal-key-1>"}'
+
+# 3. If still failing, the KEK backup may be incorrect
+# 4. Check all KEK backup locations
+# 5. If all KEK backups are lost, vault is UNRECOVERABLE
+```
+
+**Vault Unsealed but Secrets Cannot Be Decrypted**
+
+This indicates the master key is correct but KEK changed:
+
+```bash
+# This should NOT happen if vault unsealed successfully
+# But if it does, check:
+# 1. Verify KEK matches the one used during initialization
+# 2. Check database for encrypted_master_key value
+# 3. Verify no one manually modified the database
+```
+
+### Shamir Secret Sharing Issues
+
+**Error: "Vault is sealed"**
+
+```bash
+# Check seal status
+curl https://localhost:8443/v1/sys/seal-status
+
+# Unseal vault (requires 3 of 5 keys)
+curl -X POST https://localhost:8443/v1/sys/unseal -d '{"key": "<share-1>"}'
+curl -X POST https://localhost:8443/v1/sys/unseal -d '{"key": "<share-2>"}'
+curl -X POST https://localhost:8443/v1/sys/unseal -d '{"key": "<share-3>"}'
+
+# After 3rd key, vault should be unsealed
+```
+
+**Error: "This unseal key has already been provided"**
+
+```bash
+# Cannot submit same key twice
+# Use a different unseal key (any 3 of 5 will work)
+```
+
+**Lost Unseal Keys**
+
+If you've lost ALL 5 unseal keys:
+1. ❌ **Vault is UNRECOVERABLE** - all secrets are lost
+2. You must re-initialize the vault from scratch
+3. All existing secrets in database are now permanently encrypted
+
+If you have at least 3 of 5 keys:
+1. ✅ Vault can still be unsealed
+2. Contact the share holders to get 3 keys
+3. After unsealing, consider re-initializing with new shares
 
 ### OpenSSL Not Found
 
@@ -362,7 +539,12 @@ Host=localhost;Port=5432;Database=usp_db;Username=usp_app;Password=xxx;SSL Mode=
 - [JWT RS256 Signing](https://tools.ietf.org/html/rfc7518#section-3.3)
 - [PostgreSQL SSL Configuration](https://www.postgresql.org/docs/current/ssl-tcp.html)
 - [ASP.NET Core Kestrel HTTPS](https://docs.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints)
-- [NIST Key Management Guidelines](https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final)
+- [NIST SP 800-57: Key Management](https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final)
+- [NIST SP 800-131A: Cryptographic Algorithms](https://csrc.nist.gov/publications/detail/sp/800-131a/rev-2/final)
+- [Shamir's Secret Sharing (1979)](https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing)
+- [AES-256-GCM Encryption](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf)
+- [FIPS 140-2: Security Requirements for Cryptographic Modules](https://csrc.nist.gov/publications/detail/fips/140/2/final)
+- [Key Encryption Key (KEK) Best Practices](https://csrc.nist.gov/glossary/term/key_encryption_key)
 
 ---
 

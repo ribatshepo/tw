@@ -1,0 +1,763 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using USP.Core.Interfaces.Services.Secrets;
+using USP.Infrastructure.Authorization;
+
+namespace USP.API.Controllers.v1;
+
+/// <summary>
+/// Transit Encryption Engine API (Vault-compatible).
+/// Provides encryption-as-a-service: encrypt, decrypt, sign, verify, and HMAC operations.
+/// </summary>
+[ApiController]
+[Route("v1/transit")]
+[Authorize]
+public class TransitController : ControllerBase
+{
+    private readonly ITransitEngine _transitEngine;
+    private readonly ILogger<TransitController> _logger;
+
+    public TransitController(
+        ITransitEngine transitEngine,
+        ILogger<TransitController> logger)
+    {
+        _transitEngine = transitEngine ?? throw new ArgumentNullException(nameof(transitEngine));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Create a new named encryption key.
+    /// </summary>
+    /// <param name="name">Unique name for the key</param>
+    /// <param name="request">Key creation parameters</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Success response</returns>
+    [HttpPost("keys/{name}")]
+    [RequirePermission("transit:create")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> CreateKey(
+        string name,
+        [FromBody] TransitCreateKeyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _transitEngine.CreateKeyAsync(
+                name,
+                request.Type ?? "aes256-gcm96",
+                request.Derived,
+                request.Exportable,
+                cancellationToken);
+
+            _logger.LogInformation("Transit key created: {KeyName} (type: {Type})", name, request.Type);
+
+            return NoContent();
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating transit key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Encrypt data using a named key.
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="request">Encryption request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Encrypted ciphertext</returns>
+    [HttpPost("encrypt/{name}")]
+    [RequirePermission("transit:encrypt")]
+    [ProducesResponseType(typeof(TransitEncryptResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> Encrypt(
+        string name,
+        [FromBody] TransitEncryptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Plaintext))
+            {
+                return BadRequest(new { errors = new[] { "plaintext is required" } });
+            }
+
+            var result = await _transitEngine.EncryptAsync(
+                name,
+                request.Plaintext,
+                request.Context,
+                request.KeyVersion,
+                cancellationToken);
+
+            _logger.LogInformation("Data encrypted with key: {KeyName} (version {Version})",
+                name, result.KeyVersion);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    ciphertext = result.Ciphertext,
+                    key_version = result.KeyVersion
+                }
+            });
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error encrypting data with key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Decrypt data using a named key.
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="request">Decryption request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Decrypted plaintext</returns>
+    [HttpPost("decrypt/{name}")]
+    [RequirePermission("transit:decrypt")]
+    [ProducesResponseType(typeof(TransitDecryptResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> Decrypt(
+        string name,
+        [FromBody] TransitDecryptRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Ciphertext))
+            {
+                return BadRequest(new { errors = new[] { "ciphertext is required" } });
+            }
+
+            var result = await _transitEngine.DecryptAsync(
+                name,
+                request.Ciphertext,
+                request.Context,
+                cancellationToken);
+
+            _logger.LogInformation("Data decrypted with key: {KeyName}", name);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    plaintext = result.Plaintext
+                }
+            });
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error decrypting data with key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Sign data using a named key.
+    /// </summary>
+    /// <param name="name">Name of the signing key</param>
+    /// <param name="request">Signing request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Signature</returns>
+    [HttpPost("sign/{name}")]
+    [RequirePermission("transit:sign")]
+    [ProducesResponseType(typeof(SignResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> Sign(
+        string name,
+        [FromBody] SignRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Input))
+            {
+                return BadRequest(new { errors = new[] { "input is required" } });
+            }
+
+            var result = await _transitEngine.SignAsync(
+                name,
+                request.Input,
+                request.HashAlgorithm ?? "sha2-256",
+                request.Context,
+                cancellationToken);
+
+            _logger.LogInformation("Data signed with key: {KeyName} (version {Version})",
+                name, result.KeyVersion);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    signature = result.Signature,
+                    key_version = result.KeyVersion
+                }
+            });
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error signing data with key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Verify a signature.
+    /// </summary>
+    /// <param name="name">Name of the signing key</param>
+    /// <param name="request">Verification request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Verification result</returns>
+    [HttpPost("verify/{name}")]
+    [RequirePermission("transit:verify")]
+    [ProducesResponseType(typeof(VerifyResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> Verify(
+        string name,
+        [FromBody] VerifyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Input))
+            {
+                return BadRequest(new { errors = new[] { "input is required" } });
+            }
+
+            if (string.IsNullOrEmpty(request.Signature))
+            {
+                return BadRequest(new { errors = new[] { "signature is required" } });
+            }
+
+            var result = await _transitEngine.VerifyAsync(
+                name,
+                request.Input,
+                request.Signature,
+                request.HashAlgorithm ?? "sha2-256",
+                request.Context,
+                cancellationToken);
+
+            _logger.LogInformation("Signature verified with key: {KeyName} (valid: {Valid})",
+                name, result.Valid);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    valid = result.Valid
+                }
+            });
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error verifying signature with key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Generate an HMAC for data.
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="request">HMAC request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>HMAC</returns>
+    [HttpPost("hmac/{name}")]
+    [RequirePermission("transit:hmac")]
+    [ProducesResponseType(typeof(HmacResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> GenerateHmac(
+        string name,
+        [FromBody] HmacRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Input))
+            {
+                return BadRequest(new { errors = new[] { "input is required" } });
+            }
+
+            var result = await _transitEngine.GenerateHmacAsync(
+                name,
+                request.Input,
+                request.HashAlgorithm ?? "sha2-256",
+                cancellationToken);
+
+            _logger.LogInformation("HMAC generated with key: {KeyName} (version {Version})",
+                name, result.KeyVersion);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    hmac = result.Hmac,
+                    key_version = result.KeyVersion
+                }
+            });
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating HMAC with key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Rotate a key to a new version.
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Success response</returns>
+    [HttpPost("keys/{name}/rotate")]
+    [RequirePermission("transit:rotate")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> RotateKey(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _transitEngine.RotateKeyAsync(name, cancellationToken);
+
+            _logger.LogInformation("Transit key rotated: {KeyName}", name);
+
+            return NoContent();
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error rotating key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Re-encrypt data with the latest key version (rewrap).
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="request">Rewrap request</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Re-encrypted ciphertext</returns>
+    [HttpPost("rewrap/{name}")]
+    [RequirePermission("transit:rewrap")]
+    [ProducesResponseType(typeof(RewrapResponse), 200)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(503)]
+    public async Task<IActionResult> Rewrap(
+        string name,
+        [FromBody] RewrapRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Ciphertext))
+            {
+                return BadRequest(new { errors = new[] { "ciphertext is required" } });
+            }
+
+            var result = await _transitEngine.RewrapAsync(
+                name,
+                request.Ciphertext,
+                request.Context,
+                cancellationToken);
+
+            _logger.LogInformation("Data rewrapped with key: {KeyName} (version {Version})",
+                name, result.KeyVersion);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    ciphertext = result.Ciphertext,
+                    key_version = result.KeyVersion
+                }
+            });
+        }
+        catch (Core.Exceptions.VaultSealedException ex)
+
+        {
+
+            _logger.LogWarning("Transit operation failed - vault is sealed");
+
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Failed transit operation");
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        
+        {
+            return StatusCode(503, new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error rewrapping data with key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Read key information.
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Key information</returns>
+    [HttpGet("keys/{name}")]
+    [RequirePermission("transit:read")]
+    [ProducesResponseType(typeof(KeyInfoResponse), 200)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> ReadKey(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var keyInfo = await _transitEngine.ReadKeyAsync(name, cancellationToken);
+
+            if (keyInfo == null)
+            {
+                return NotFound(new { errors = new[] { $"Transit key '{name}' not found" } });
+            }
+
+            return Ok(new
+            {
+                data = new
+                {
+                    name = keyInfo.Name,
+                    type = keyInfo.Type,
+                    derived = keyInfo.Derivation,
+                    exportable = keyInfo.Exportable,
+                    deletion_allowed = keyInfo.DeletionAllowed,
+                    latest_version = keyInfo.LatestVersion,
+                    min_decryption_version = keyInfo.MinDecryptionVersion,
+                    min_encryption_version = keyInfo.MinEncryptionVersion,
+                    keys = keyInfo.Keys,
+                    supports_encryption = keyInfo.Type.Contains("aes") || keyInfo.Type.Contains("chacha") || keyInfo.Type.Contains("rsa"),
+                    supports_decryption = keyInfo.Type.Contains("aes") || keyInfo.Type.Contains("chacha") || keyInfo.Type.Contains("rsa"),
+                    supports_signing = keyInfo.Type.Contains("rsa") || keyInfo.Type.Contains("ecdsa") || keyInfo.Type.Contains("ed25519"),
+                    supports_derivation = keyInfo.Derivation
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// List all transit keys.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of key names</returns>
+    [HttpGet("keys")]
+    [RequirePermission("transit:list")]
+    [ProducesResponseType(typeof(ListKeysResponse), 200)]
+    public async Task<IActionResult> ListKeys(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var keys = await _transitEngine.ListKeysAsync(cancellationToken);
+
+            return Ok(new
+            {
+                data = new
+                {
+                    keys
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error listing transit keys");
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+
+    /// <summary>
+    /// Delete a transit key.
+    /// </summary>
+    /// <param name="name">Name of the key</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Success response</returns>
+    [HttpDelete("keys/{name}")]
+    [RequirePermission("transit:delete")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(403)]
+    [ProducesResponseType(404)]
+    public async Task<IActionResult> DeleteKey(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _transitEngine.DeleteKeyAsync(name, cancellationToken);
+
+            _logger.LogInformation("Transit key deleted: {KeyName}", name);
+
+            return NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Key deletion failed: {KeyName}", name);
+            return BadRequest(new { errors = new[] { ex.Message } });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting key: {KeyName}", name);
+            return StatusCode(500, new { errors = new[] { "Internal server error" } });
+        }
+    }
+}
+
+// Request/Response DTOs for Transit Engine
+
+public class TransitCreateKeyRequest
+{
+    public string? Type { get; set; } = "aes256-gcm96";
+    public bool Derived { get; set; } = false;
+    public bool Exportable { get; set; } = false;
+}
+
+public class TransitEncryptRequest
+{
+    public string Plaintext { get; set; } = string.Empty;
+    public string? Context { get; set; }
+    public int? KeyVersion { get; set; }
+}
+
+public class TransitEncryptResponse
+{
+    public string Ciphertext { get; set; } = string.Empty;
+    public int KeyVersion { get; set; }
+}
+
+public class TransitDecryptRequest
+{
+    public string Ciphertext { get; set; } = string.Empty;
+    public string? Context { get; set; }
+}
+
+public class TransitDecryptResponse
+{
+    public string Plaintext { get; set; } = string.Empty;
+}
+
+public class SignRequest
+{
+    public string Input { get; set; } = string.Empty;
+    public string? HashAlgorithm { get; set; } = "sha2-256";
+    public string? Context { get; set; }
+}
+
+public class SignResponse
+{
+    public string Signature { get; set; } = string.Empty;
+    public int KeyVersion { get; set; }
+}
+
+public class VerifyRequest
+{
+    public string Input { get; set; } = string.Empty;
+    public string Signature { get; set; } = string.Empty;
+    public string? HashAlgorithm { get; set; } = "sha2-256";
+    public string? Context { get; set; }
+}
+
+public class VerifyResponse
+{
+    public bool Valid { get; set; }
+}
+
+public class HmacRequest
+{
+    public string Input { get; set; } = string.Empty;
+    public string? HashAlgorithm { get; set; } = "sha2-256";
+}
+
+public class HmacResponse
+{
+    public string Hmac { get; set; } = string.Empty;
+    public int KeyVersion { get; set; }
+}
+
+public class RewrapRequest
+{
+    public string Ciphertext { get; set; } = string.Empty;
+    public string? Context { get; set; }
+}
+
+public class RewrapResponse
+{
+    public string Ciphertext { get; set; } = string.Empty;
+    public int KeyVersion { get; set; }
+}
+
+public class KeyInfoResponse
+{
+    public string Name { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public bool Derived { get; set; }
+    public bool Exportable { get; set; }
+    public bool DeletionAllowed { get; set; }
+    public int LatestVersion { get; set; }
+    public int MinDecryptionVersion { get; set; }
+    public int MinEncryptionVersion { get; set; }
+    public Dictionary<int, DateTime> Keys { get; set; } = new();
+}
+
+public class ListKeysResponse
+{
+    public List<string> Keys { get; set; } = new();
+}

@@ -41,4 +41,17 @@ public class AuditLog
     public string? CorrelationId { get; set; }
 
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Hash of the previous audit log entry for blockchain-style chain verification
+    /// </summary>
+    [MaxLength(64)]
+    public string? PreviousHash { get; set; }
+
+    /// <summary>
+    /// Hash of this audit log entry for tamper detection
+    /// </summary>
+    [Required]
+    [MaxLength(64)]
+    public string CurrentHash { get; set; } = string.Empty;
 }

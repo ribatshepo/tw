@@ -201,5 +201,11 @@ public enum AuditEventType
     /// <summary>
     /// Audit export requested
     /// </summary>
-    AuditExported = 701
+    AuditExported = 701,
+
+    // API Events (800-899)
+    /// <summary>
+    /// General API request
+    /// </summary>
+    ApiRequest = 800
 }

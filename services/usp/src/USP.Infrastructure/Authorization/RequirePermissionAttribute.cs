@@ -14,7 +14,6 @@ namespace USP.Infrastructure.Authorization;
 /// [RequirePermission("secrets", "write")]
 /// public IActionResult CreateSecret() { ... }
 /// </summary>
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = true)]
 public class RequirePermissionAttribute : AuthorizeAttribute
 {
     /// <summary>

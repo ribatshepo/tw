@@ -87,13 +87,25 @@ if [[ -z "$MASTER_KEY" ]]; then
     exit 1
 fi
 
-# Display key to user
+info "Generating 256-bit (32-byte) Key Encryption Key (KEK)..."
+
+# Generate KEK (Key Encryption Key) - must be separate from master key
+KEK=$(openssl rand -base64 32)
+
+# Verify KEK was generated
+if [[ -z "$KEK" ]]; then
+    error "Failed to generate Key Encryption Key (KEK)"
+    exit 1
+fi
+
+# Display keys to user
 echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MASTER ENCRYPTION KEY (CRITICAL - BACKUP SECURELY!)"
+echo "  ENCRYPTION KEYS (CRITICAL - BACKUP SECURELY!)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 echo "  USP_Encryption__MasterKey=$MASTER_KEY"
+echo "  USP_KEY_ENCRYPTION_KEY=$KEK"
 echo
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
@@ -115,14 +127,21 @@ if [[ -n "$OUTPUT_FILE" ]]; then
     # Write or append to file
     if [[ "$APPEND_MODE" == true ]]; then
         echo "USP_Encryption__MasterKey=$MASTER_KEY" >> "$OUTPUT_FILE"
-        success "Master key appended to: $OUTPUT_FILE"
+        echo "USP_KEY_ENCRYPTION_KEY=$KEK" >> "$OUTPUT_FILE"
+        success "Encryption keys appended to: $OUTPUT_FILE"
     else
-        echo "# USP Master Encryption Key" > "$OUTPUT_FILE"
+        echo "# USP Encryption Keys" > "$OUTPUT_FILE"
         echo "# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$OUTPUT_FILE"
-        echo "# WARNING: Keep this file secure! All encrypted data depends on this key." >> "$OUTPUT_FILE"
+        echo "# WARNING: Keep this file secure! All encrypted data depends on these keys." >> "$OUTPUT_FILE"
+        echo "# CRITICAL: Store Master Key and KEK separately in production!" >> "$OUTPUT_FILE"
+        echo "" >> "$OUTPUT_FILE"
+        echo "# Master Key: Used by Shamir Secret Sharing to reconstruct vault key" >> "$OUTPUT_FILE"
         echo "USP_Encryption__MasterKey=$MASTER_KEY" >> "$OUTPUT_FILE"
+        echo "" >> "$OUTPUT_FILE"
+        echo "# Key Encryption Key (KEK): Used to encrypt the master key at rest" >> "$OUTPUT_FILE"
+        echo "USP_KEY_ENCRYPTION_KEY=$KEK" >> "$OUTPUT_FILE"
         chmod 600 "$OUTPUT_FILE"
-        success "Master key written to: $OUTPUT_FILE"
+        success "Encryption keys written to: $OUTPUT_FILE"
         info "File permissions set to 600 (read/write owner only)"
     fi
     echo
@@ -131,23 +150,31 @@ fi
 # Display warnings and instructions
 warn "⚠️  CRITICAL SECURITY WARNINGS:"
 echo
-echo "  1. BACKUP THIS KEY IMMEDIATELY!"
+echo "  1. BACKUP THESE KEYS IMMEDIATELY!"
 echo "     - Store in a secure location (password manager, hardware security module)"
 echo "     - Keep multiple secure backups"
 echo "     - Document the backup locations"
+echo "     - CRITICAL: Store Master Key and KEK in SEPARATE locations in production!"
 echo
-echo "  2. PROTECT THIS KEY:"
+echo "  2. PROTECT THESE KEYS:"
 echo "     - Never commit to version control"
 echo "     - Never email or send via unsecured channels"
 echo "     - Restrict access to authorized personnel only"
 echo "     - Use a secrets management solution in production"
+echo "     - In production: Use HSM or cloud KMS for KEK (AWS KMS, Azure Key Vault, GCP KMS)"
 echo
 echo "  3. KEY RECOVERY:"
-echo "     - Without this key, ALL encrypted secrets are UNRECOVERABLE"
-echo "     - There is NO way to recover encrypted data if key is lost"
-echo "     - Losing this key means losing all encrypted secrets permanently"
+echo "     - Without BOTH keys, ALL encrypted secrets are UNRECOVERABLE"
+echo "     - There is NO way to recover encrypted data if either key is lost"
+echo "     - Losing either key means losing all encrypted secrets permanently"
 echo
-echo "  4. KEY ROTATION:"
+echo "  4. KEY SEPARATION (PRODUCTION REQUIREMENT):"
+echo "     - Master Key: Used by Shamir Secret Sharing for vault unsealing"
+echo "     - KEK: Used to encrypt the master key at rest"
+echo "     - These keys MUST be stored separately for security"
+echo "     - Consider using cloud KMS for KEK in production"
+echo
+echo "  5. KEY ROTATION:"
 echo "     - Plan for regular key rotation (e.g., annually)"
 echo "     - Document key rotation procedures"
 echo "     - Re-encrypt all secrets when rotating keys"
@@ -159,12 +186,15 @@ info "Usage in configuration:"
 echo
 echo "Add to your .env file or environment:"
 echo "  USP_Encryption__MasterKey=$MASTER_KEY"
+echo "  USP_KEY_ENCRYPTION_KEY=$KEK"
 echo
 echo "Or in appsettings.json (NOT recommended for production):"
 echo '  "Encryption": {'
-echo '    "MasterKey": "'"$MASTER_KEY"'"'
+echo '    "MasterKey": "'"$MASTER_KEY"'",'
+echo '    "KeyEncryptionKey": "'"$KEK"'"'
 echo '  }'
 echo
-info "Master key generated successfully!"
+info "Encryption keys generated successfully!"
 echo
-warn "Remember to backup this key in a secure location immediately!"
+warn "Remember to backup BOTH keys in secure, SEPARATE locations immediately!"
+warn "In production, use cloud KMS or HSM for the Key Encryption Key (KEK)!"

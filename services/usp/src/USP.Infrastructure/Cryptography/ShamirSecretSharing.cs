@@ -219,11 +219,11 @@ public static class ShamirSecretSharing
 
     /// <summary>
     /// Initializes the logarithm and exponentiation tables for GF(256).
-    /// Uses the irreducible polynomial x^8 + x^4 + x^3 + x + 1 (0x11B).
+    /// Uses the irreducible polynomial x^8 + x^4 + x^3 + x^2 + 1 (0x11D) which is standard for Shamir.
     /// </summary>
     private static void InitializeGaloisField()
     {
-        int polynomial = 0x11B; // x^8 + x^4 + x^3 + x + 1
+        int polynomial = 0x11D; // x^8 + x^4 + x^3 + x^2 + 1 (standard for Shamir)
         int x = 1;
 
         for (int i = 0; i < 255; i++)
@@ -231,18 +231,17 @@ public static class ShamirSecretSharing
             ExpTable[i] = (byte)x;
             LogTable[x] = (byte)i;
 
-            // Multiply by x (generator = 2)
-            x <<= 1;
+            // Multiply by 2 (left shift in GF)
+            x = (x << 1);
 
-            // If x overflows 8 bits, reduce by polynomial
+            // If overflow, reduce by polynomial (x^8 term becomes lower terms)
             if ((x & 0x100) != 0)
             {
                 x ^= polynomial;
             }
         }
 
-        // Handle special cases
-        ExpTable[255] = ExpTable[0]; // Wrap around for convenience
-        LogTable[0] = 0; // Undefined, but set to 0 for safety
+        // Ensure wraparound works correctly
+        ExpTable[255] = ExpTable[0]; // α^255 = α^0 = 1
     }
 }
