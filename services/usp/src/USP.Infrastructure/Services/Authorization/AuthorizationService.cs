@@ -5,6 +5,7 @@ using USP.Core.Domain.Entities.Identity;
 using USP.Core.Domain.Entities.Security;
 using USP.Core.Domain.Enums;
 using USP.Core.Interfaces.Services.Authorization;
+using USP.Infrastructure.Metrics;
 using USP.Infrastructure.Persistence;
 
 namespace USP.Infrastructure.Services.Authorization;
@@ -41,6 +42,9 @@ public class AuthorizationService : IAuthorizationService
         _logger.LogInformation(
             "Checking authorization for user {UserId}, resource: {Resource}, action: {Action}",
             userId, resource, action);
+
+        // Start timing authorization check
+        using var timer = SecurityMetrics.AuthorizationCheckDuration.NewTimer();
 
         try
         {
@@ -87,6 +91,15 @@ public class AuthorizationService : IAuthorizationService
                         "Policy {PolicyId} ({PolicyName}) matched. Effect: {Effect}, Authorized: {IsAuthorized}",
                         policy.Id, policy.Name, policy.Effect, isAuthorized);
 
+                    // Record metrics
+                    SecurityMetrics.RecordAuthorizationCheck(isAuthorized);
+                    if (matchedPolicyType.HasValue)
+                    {
+                        var policyTypeStr = matchedPolicyType.Value.ToString().ToLowerInvariant();
+                        var result = isAuthorized ? "allowed" : "denied";
+                        SecurityMetrics.RecordPolicyEvaluation(policyTypeStr, result);
+                    }
+
                     return new AuthorizationResult
                     {
                         IsAuthorized = isAuthorized,
@@ -104,6 +117,9 @@ public class AuthorizationService : IAuthorizationService
                 "No policy matched for user {UserId}, resource: {Resource}, action: {Action}. Default deny.",
                 userId, resource, action);
 
+            // Record metrics for default deny
+            SecurityMetrics.RecordAuthorizationCheck(false);
+
             return new AuthorizationResult
             {
                 IsAuthorized = false,
@@ -117,6 +133,9 @@ public class AuthorizationService : IAuthorizationService
             _logger.LogError(ex,
                 "Error checking authorization for user {UserId}, resource: {Resource}, action: {Action}",
                 userId, resource, action);
+
+            // Record metrics for authorization error
+            SecurityMetrics.RecordAuthorizationError();
 
             // Fail secure - deny on error
             return new AuthorizationResult
